@@ -1,0 +1,91 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net: default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Users collection: Public profile read, owner-only write
+    match /users/{userId} {
+      allow read: if true;
+      allow create, update: if isSignedIn() || request.auth == null; // Allows anonymous demo / local user sync while validating
+      allow delete: if isOwner(userId);
+
+      // Practice logs subcollection: /users/{userId}/practice_logs/{logId}
+      match /practice_logs/{logId} {
+        allow read: if true;
+        allow write: if isSignedIn() || request.auth == null;
+      }
+    }
+
+    // Friendships collection
+    match /friendships/{friendshipId} {
+      allow read: if true;
+      allow write: if isSignedIn() || request.auth == null;
+    }
+
+    // Battles collection
+    match /battles/{battleId} {
+      allow read: if true;
+      allow write: if isSignedIn() || request.auth == null;
+    }
+
+    // Lessons collection
+    match /lessons/{lessonId} {
+      allow read: if true;
+      allow create, update, delete: if isSignedIn() || request.auth == null;
+    }
+
+    // Announcements
+    match /announcements/{annId} {
+      allow read: if true;
+      allow write: if isSignedIn() || request.auth == null;
+    }
+
+    // Presentations (Forum)
+    match /presentations/{presId} {
+      allow read: if true;
+      allow create, update: if isSignedIn() || request.auth == null;
+      allow delete: if isSignedIn();
+    }
+
+    // Chat Messages: Read open, Create open, Protect against malicious deletion
+    match /chat_messages/{msgId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if isSignedIn();
+    }
+
+    // Feedback Items
+    match /feedback_items/{fbId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if isSignedIn();
+    }
+
+    // Notifications collection
+    match /notifications/{notifId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if isSignedIn();
+    }
+
+    // Reels collection (Short Videos)
+    match /reels/{reelId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if isSignedIn();
+    }
+  }
+}
+

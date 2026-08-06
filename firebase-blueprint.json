@@ -1,0 +1,211 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with completed lessons, streaks, and goals",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "username": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "avatar": { "type": "string" },
+        "role": { "type": "string" },
+        "status": { "type": "string", "enum": ["online", "in_battle", "offline"] },
+        "isOnline": { "type": "boolean" },
+        "completedLessons": { "type": "array" },
+        "streakDays": { "type": "integer" },
+        "lastActiveDate": { "type": "string" },
+        "weeklyPracticeGoal": { "type": "integer" },
+        "weeklyPracticeHours": { "type": "number" },
+        "targetBpm": { "type": "integer" },
+        "points": { "type": "integer" }
+      },
+      "required": ["id", "name", "role", "completedLessons"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Academy announcements",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "date": { "type": "string" },
+        "author": { "type": "string" },
+        "important": { "type": "boolean" }
+      },
+      "required": ["id", "title", "content", "date", "author"]
+    },
+    "Presentation": {
+      "title": "Presentation",
+      "description": "Community presentation post",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentName": { "type": "string" },
+        "studentAvatar": { "type": "string" },
+        "text": { "type": "string" },
+        "videoUrl": { "type": "string" },
+        "date": { "type": "string" },
+        "likes": { "type": "integer" },
+        "isLikedByMe": { "type": "boolean" },
+        "comments": { "type": "array" }
+      },
+      "required": ["id", "studentName", "text", "date", "likes", "comments"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Lobby chat message",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "user": { "type": "string" },
+        "avatar": { "type": "string" },
+        "text": { "type": "string" },
+        "time": { "type": "string" },
+        "role": { "type": "string" }
+      },
+      "required": ["id", "user", "text", "time"]
+    },
+    "FeedbackItem": {
+      "title": "FeedbackItem",
+      "description": "Training feedback/practice video submission",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "studentAvatar": { "type": "string" },
+        "videoTitle": { "type": "string" },
+        "videoUrl": { "type": "string" },
+        "description": { "type": "string" },
+        "date": { "type": "string" },
+        "corrections": { "type": "array" },
+        "completed": { "type": "boolean" }
+      },
+      "required": ["id", "studentName", "videoTitle", "videoUrl", "completed"]
+    },
+    "NotificationItem": {
+      "title": "NotificationItem",
+      "description": "Notification document for user feedback reviews and academy updates",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "type": { "type": "string" },
+        "feedbackId": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "title", "body", "read", "createdAt"]
+    },
+    "Lesson": {
+      "title": "Lesson",
+      "description": "Academy course lesson",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "level": { "type": "integer" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "duration": { "type": "string" },
+        "category": { "type": "string" },
+        "videoUrl": { "type": "string" },
+        "completed": { "type": "boolean" },
+        "instructorId": { "type": "string" },
+        "instructorName": { "type": "string" }
+      },
+      "required": ["id", "level", "title", "description", "duration", "category", "videoUrl"]
+    },
+    "PracticeLog": {
+      "title": "PracticeLog",
+      "description": "Student training session log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "minutes": { "type": "number" },
+        "activityType": { "type": "string" },
+        "description": { "type": "string" }
+      },
+      "required": ["id", "date", "minutes", "activityType", "description"]
+    },
+    "Friendship": {
+      "title": "Friendship",
+      "description": "Friendship connection between dancers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "users": { "type": "array" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined"] },
+        "requestedBy": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "users", "status", "requestedBy"]
+    },
+    "Battle": {
+      "title": "Battle",
+      "description": "Live battle invitation and active room session",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "hostId": { "type": "string" },
+        "hostName": { "type": "string" },
+        "hostAvatar": { "type": "string" },
+        "guestId": { "type": "string" },
+        "guestName": { "type": "string" },
+        "guestAvatar": { "type": "string" },
+        "tool": { "type": "string" },
+        "status": { "type": "string", "enum": ["waiting", "active", "finished", "declined", "expired"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "hostId", "guestId", "tool", "status"]
+    }
+  },
+  "firestore": {
+    "users": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles collection"
+    },
+    "friendships": {
+      "schema": { "$ref": "#/entities/Friendship" },
+      "description": "Friend requests and accepted friendships"
+    },
+    "battles": {
+      "schema": { "$ref": "#/entities/Battle" },
+      "description": "Live battle sessions and invitations"
+    },
+    "lessons": {
+      "schema": { "$ref": "#/entities/Lesson" },
+      "description": "Academy lessons collection"
+    },
+    "users/{userId}/practice_logs/{logId}": {
+      "schema": { "$ref": "#/entities/PracticeLog" },
+      "description": "User practice logs subcollection"
+    },
+    "announcements": {
+      "schema": { "$ref": "#/entities/Announcement" },
+      "description": "Announcements collection"
+    },
+    "presentations": {
+      "schema": { "$ref": "#/entities/Presentation" },
+      "description": "Forum presentations collection"
+    },
+    "chat_messages": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Live lobby chat messages collection"
+    },
+    "feedback_items": {
+      "schema": { "$ref": "#/entities/FeedbackItem" },
+      "description": "Practice submissions for coach feedback"
+    },
+    "notifications": {
+      "schema": { "$ref": "#/entities/NotificationItem" },
+      "description": "User notifications for feedback reviews and system alerts"
+    }
+  }
+}
