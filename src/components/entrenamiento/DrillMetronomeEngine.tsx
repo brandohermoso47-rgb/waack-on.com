@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Play, Square, Volume2, VolumeX, Mic, Radio, Sliders, Zap, Activity, Clock, ShieldCheck } from 'lucide-react';
+import { Play, Square, Volume2, VolumeX, Mic, Radio, Sliders, Zap, Activity, Clock, ShieldCheck, Sparkles } from 'lucide-react';
 import { Language } from '../../lib/translations';
 
 export type CountingMode = 'accent' | 'voice' | 'mixed';
@@ -28,6 +28,10 @@ export const DrillMetronomeEngine: React.FC<DrillMetronomeEngineProps> = ({
   const [flash, setFlash] = useState<boolean>(false);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [totalBeatsPlayed, setTotalBeatsPlayed] = useState<number>(0);
+
+  useEffect(() => {
+    if (onBpmChange) onBpmChange(bpm);
+  }, [bpm, onBpmChange]);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | number | null>(null);
@@ -210,32 +214,41 @@ export const DrillMetronomeEngine: React.FC<DrillMetronomeEngineProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center relative z-10">
         
         {/* Left Column: BPM Dial Control */}
-        <div className="md:col-span-6 bg-black/40 border border-white/10 rounded-2xl p-5 flex flex-col items-center justify-center space-y-4 relative overflow-hidden shadow-inner">
-          <span className="text-xs font-mono font-bold uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
-            <Sliders className="w-3.5 h-3.5 text-tertiary" /> TEMPO DE DRILL (BPM)
-          </span>
+        <div className="md:col-span-6 rounded-2xl p-5 flex flex-col items-center justify-center space-y-4 relative overflow-hidden shadow-inner border bg-black/40 border-white/10">
+          <div className="flex items-center justify-between w-full">
+            <span className="text-xs font-mono font-bold uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
+              <Sliders className="w-3.5 h-3.5 text-tertiary" /> TEMPO DE DRILL (BPM)
+            </span>
+          </div>
 
           {/* Large Dial Display */}
-          <div className="flex items-baseline gap-1 select-none">
-            <span className="text-6xl font-black font-mono tracking-tighter text-tertiary drop-shadow-md">
-              {bpm}
-            </span>
-            <span className="text-xs font-mono font-bold text-slate-400 uppercase">BPM</span>
+          <div className="flex flex-col items-center select-none">
+            {bpm % 10 === 0 && (
+              <span className="px-2.5 py-0.5 rounded-full text-[9px] font-mono font-black uppercase tracking-widest bg-tertiary text-black shadow flex items-center gap-1 mb-1">
+                <Sparkles className="w-3 h-3" /> MÚLTIPLO 10x ALCANZADO
+              </span>
+            )}
+            <div className="flex items-baseline gap-1">
+              <span className="text-6xl font-black font-mono tracking-tighter text-tertiary drop-shadow-md">
+                {bpm}
+              </span>
+              <span className="text-xs font-mono font-bold text-slate-400 uppercase">BPM</span>
+            </div>
           </div>
 
           {/* Preset BPM Buttons */}
-          <div className="flex items-center justify-center gap-1.5 w-full">
-            {[90, 110, 120, 128, 140, 160].map((preset) => (
+          <div className="flex items-center justify-center flex-wrap gap-1.5 w-full">
+            {[90, 100, 110, 120, 130, 140, 150, 160].map((preset) => (
               <button
                 key={preset}
                 onClick={() => setBpm(preset)}
-                className={`px-2.5 py-1 rounded-xl text-[11px] font-mono font-bold transition-all border ${
+                className={`px-2.5 py-1 rounded-xl text-[11px] font-mono font-bold transition-all border flex items-center gap-1 ${
                   bpm === preset
                     ? 'bg-tertiary text-black border-tertiary font-black shadow-md scale-105'
                     : 'bg-white/5 text-slate-300 border-white/10 hover:border-tertiary/40'
                 }`}
               >
-                {preset}
+                <span>{preset}</span>
               </button>
             ))}
           </div>
@@ -251,8 +264,12 @@ export const DrillMetronomeEngine: React.FC<DrillMetronomeEngineProps> = ({
               className="w-full accent-tertiary cursor-pointer h-2 bg-slate-800 rounded-lg"
             />
             <div className="flex justify-between text-[10px] font-mono text-slate-400">
-              <span>80 BPM (Entrenamiento Lento)</span>
-              <span>180 BPM (Ultra Speed)</span>
+              <span>80 BPM</span>
+              <span>100 📳</span>
+              <span>120 📳</span>
+              <span>140 📳</span>
+              <span>160 📳</span>
+              <span>180 BPM</span>
             </div>
           </div>
         </div>

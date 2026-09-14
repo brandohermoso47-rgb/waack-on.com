@@ -30,10 +30,13 @@ import {
   Monitor,
   Lock,
   Zap,
-  BarChart2
+  BarChart2,
+  Radio
 } from 'lucide-react';
 import { User, PlaylistItem, FeedbackItem, Correction, Lesson } from '../types';
 import { Language, translations } from '../lib/translations';
+import { storage } from '../lib/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import PremiumGate from './PremiumGate';
 import { DramaLab } from './lab/DramaLab';
 import { DrillLab } from './lab/DrillLab';
@@ -42,11 +45,14 @@ import { CombosLab } from './lab/CombosLab';
 import { PlaylistsLab } from './lab/PlaylistsLab';
 import { SomaticFeedbackLab } from './lab/SomaticFeedbackLab';
 import { SomaticPostureAnalyzer } from './entrenamiento/SomaticPostureAnalyzer';
+import MovementTrailStudio from './entrenamiento/movementTrail/MovementTrailStudio';
 import { WaackingRhythmGame } from './entrenamiento/WaackingRhythmGame';
 import { AudioSpectrumVisualizer } from './entrenamiento/AudioSpectrumVisualizer';
+import { SmartMusicalityTrainer } from './entrenamiento/SmartMusicalityTrainer';
 import { PracticeDuelsModal } from './PracticeDuelsModal';
 import { TrainingSummaryModal, TrainingSessionSummary } from './TrainingSummaryModal';
 import { signInForGoogleDocs, createGoogleDoc, appendTextToGoogleDoc } from '../googleDocs';
+import AIPoseLab from './AIPoseLab';
 
 interface EntrenamientoViewProps {
   currentUser: User;
@@ -58,6 +64,10 @@ interface EntrenamientoViewProps {
   onLogPractice?: (minutes: number, activityType: 'drill' | 'battle' | 'combo' | 'playlist' | 'sensorial', description: string, extra?: { category?: Lesson['category']; bpm?: number }) => void;
   language: Language;
   onUserChange?: (user: User) => void;
+  trainingBpm?: number;
+  onBpmChange?: (bpm: number) => void;
+  theme?: 'dark' | 'light';
+  onOpenSpotifyPlayer?: () => void;
 }
 
 const LOCALIZED_DRILL_INSTRUCTIONS: Record<Language, string[]> = {
@@ -566,14 +576,14 @@ const VISUAL_STIMULI = [
     videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-dancing-woman-in-a-nightclub-with-sparkles-and-lights-34283-large.mp4',
     pioneerQuote: '"Bailamos porque nos amamos. Bailamos porque somos libres. Que tu rostro irradie la luz de una supernova de felicidad." — Studio 54 Legends',
     intensity: 'Media',
-    badgeColor: 'bg-yellow-500/10 text-[#E9C349] border-[#E9C349]/20'
+    badgeColor: 'bg-yellow-500/10 text-[#D9A9FF] border-[#D9A9FF]/20'
   }
 ];
 
 const LAB_TRANSLATIONS: Record<Language, Record<string, string>> = {
   es: {
-    title: "ZONA INTERACTIVA Y ENTRENAMIENTO",
-    subtitle: "El laboratorio práctico. Aquí es donde te pones los tenis, das play y sudas la camiseta.",
+    title: "LABORATORIO DE FREESTYLES",
+    subtitle: "El laboratorio práctico de danza y experimentación. Entrena musicalidad a 3 tempos, drills, combos, freestyle a ciegas y expresión escénica.",
     drillTab: "⏱️ DRILL TRAINER",
     battleTab: "🎯 RETO DE OBJETIVOS",
     combosTab: "🔀 DRAFT DE COMBOS",
@@ -583,8 +593,8 @@ const LAB_TRANSLATIONS: Record<Language, Record<string, string>> = {
     feedbackTab: "🎬 FEEDBACK EN VIDEO",
   },
   en: {
-    title: "INTERACTIVE TRAINING ZONE",
-    subtitle: "The practical laboratory. This is where you put on your sneakers, press play, and work up a sweat.",
+    title: "FREESTYLE LABORATORY",
+    subtitle: "The practical dance & experimentation lab. Train 3-tempo musicality, drills, combo drafts, blind freestyle, and stage expression.",
     drillTab: "⏱️ DRILL TRAINER",
     battleTab: "🎯 TARGET CHALLENGE",
     combosTab: "🔀 COMBO DRAFT",
@@ -594,8 +604,8 @@ const LAB_TRANSLATIONS: Record<Language, Record<string, string>> = {
     feedbackTab: "🎬 VIDEO FEEDBACK",
   },
   ko: {
-    title: "대화형 트레이닝 존",
-    subtitle: "실습 연구실입니다. 운동화를 신고 재생 버튼을 누르고 땀을 흘리는 곳입니다.",
+    title: "프리스타일 연구소",
+    subtitle: "실습 댄스 및 실험 연구소입니다. 3가지 템포 음악성, 드릴, 콤보 드래프트, 블라인드 프리스타일 및 무대 표현을 훈련하세요.",
     drillTab: "⏱️ 드릴 트레이너",
     battleTab: "🎯 목표 챌린지",
     combosTab: "🔀 콤보 드래프트",
@@ -605,8 +615,8 @@ const LAB_TRANSLATIONS: Record<Language, Record<string, string>> = {
     feedbackTab: "🎬 비디오 피드백",
   },
   ja: {
-    title: "インタラクティブ・トレーニング・ゾーン",
-    subtitle: "実践ラボ。ここにスニーカーを履いて、プレイを押して、汗を流す場所です。",
+    title: "フリースタイル・ラボラトリー",
+    subtitle: "実践的なダンス＆実験ラボ。3テンポ音楽性、ドリル、コンボドラフト、ブラインドフリースタイル、ステージ表現をトレーニングします。",
     drillTab: "⏱️ ドリルトレーナー",
     battleTab: "🎯 目標チャレンジ",
     combosTab: "🔀 コンボドラフト",
@@ -616,8 +626,8 @@ const LAB_TRANSLATIONS: Record<Language, Record<string, string>> = {
     feedbackTab: "🎬 ビデオフィードバック",
   },
   pt: {
-    title: "ZONA INTERATIVA E TREINAMENTO",
-    subtitle: "O laboratório prático. Aqui é onde você calça os tênis, dá play e sua a camisa.",
+    title: "LABORATÓRIO DE FREESTYLES",
+    subtitle: "O laboratório prático de dança e experimentação. Treine musicalidade em 3 tempos, drills, combos, freestyle às cegas e expressão cênica.",
     drillTab: "⏱️ DRILL TRAINER",
     battleTab: "🎯 DESAFIO DE OBJETIVOS",
     combosTab: "🔀 RASCUNHO DE COMBOS",
@@ -1079,9 +1089,13 @@ export default function EntrenamientoView({
   onAddBonusPoints,
   onLogPractice,
   language,
-  onUserChange
+  onUserChange,
+  trainingBpm,
+  onBpmChange,
+  theme,
+  onOpenSpotifyPlayer
 }: EntrenamientoViewProps) {
-  const [subTab, setSubTab] = useState<'drill' | 'battle' | 'playlists' | 'combos' | 'sensorial' | 'feedback' | 'somatic' | 'drama' | 'rhythm' | 'spectrum'>('drill');
+  const [subTab, setSubTab] = useState<'drill' | 'battle' | 'playlists' | 'combos' | 'sensorial' | 'feedback' | 'somatic' | 'drama' | 'rhythm' | 'spectrum' | 'musicality' | 'pose_lab' | 'trazos'>('musicality');
 
   // 9. DRAMA & EXPRESSION LAB STATE
   const [cameraActive, setCameraActive] = useState(false);
@@ -1172,32 +1186,34 @@ export default function EntrenamientoView({
       setDramaPointsAwarded(false);
       timerRef.current = setInterval(() => {
         setDramaTimer(prev => {
-          if (prev <= 1) {
+          const next = prev - 1;
+          if (next <= 0) {
             clearInterval(timerRef.current);
-            setIsDramaPracticing(false);
-            if (onAddBonusPoints) {
-              onAddBonusPoints(50);
-            }
-            if (onLogPractice) {
-              onLogPractice(1, 'sensorial', `Práctica en Lab de Expresión: ${VISUAL_STIMULI[activeStimulusIndex].title}`);
-            }
-            setDramaPointsAwarded(true);
-            playSynthBeep(1200, 0.3);
             setTimeout(() => {
-              playSynthBeep(1500, 0.4);
-            }, 150);
+              setIsDramaPracticing(false);
+              if (onAddBonusPoints) {
+                onAddBonusPoints(50);
+              }
+              if (onLogPractice) {
+                onLogPractice(1, 'sensorial', `Práctica en Lab de Expresión: ${VISUAL_STIMULI[activeStimulusIndex]?.title || 'Estímulo Dramático'}`);
+              }
+              setDramaPointsAwarded(true);
+              playSynthBeep(1200, 0.3);
+              setTimeout(() => {
+                playSynthBeep(1500, 0.4);
+              }, 150);
 
-            triggerSummary({
-              durationSeconds: 45,
-              activityType: `Lab de Expresión: ${VISUAL_STIMULI[activeStimulusIndex]?.title || 'Estímulo Dramático'}`,
-              pointsEarned: 50,
-              details: 'Liderazgo de mirada, intención escénica y control de proyección',
-              category: 'drama'
-            });
-
+              triggerSummary({
+                durationSeconds: 45,
+                activityType: `Lab de Expresión: ${VISUAL_STIMULI[activeStimulusIndex]?.title || 'Estímulo Dramático'}`,
+                pointsEarned: 50,
+                details: 'Liderazgo de mirada, intención escénica y control de proyección',
+                category: 'drama'
+              });
+            }, 0);
             return 0;
           }
-          return prev - 1;
+          return next;
         });
       }, 1000);
     } else {
@@ -1232,6 +1248,17 @@ export default function EntrenamientoView({
   const [currentPrompt, setCurrentPrompt] = useState("¡DALE PLAY AL DRILL PARA EMPEZAR!");
   const [beatCount, setBeatCount] = useState(0);
 
+  // Sync external header BPM when provided
+  useEffect(() => {
+    if (trainingBpm && trainingBpm >= 60 && trainingBpm <= 220) {
+      setDrillBpm(trainingBpm);
+      setBattleBpm(trainingBpm);
+      setScBpm(trainingBpm);
+      setTapChallengeBpm(trainingBpm);
+      setComboPracticeBpm(trainingBpm);
+    }
+  }, [trainingBpm]);
+
   // Update standby prompt when language changes
   useEffect(() => {
     if (!isDrillRunning) {
@@ -1254,7 +1281,7 @@ export default function EntrenamientoView({
   const [playlistProgress, setPlaylistProgress] = useState(15);
 
   // 4. SOUNDCLOUD PLAYER & SYNC ENGINE STATE
-  const [playlistMode, setPlaylistMode] = useState<'local' | 'soundcloud'>('local');
+  const [playlistMode, setPlaylistMode] = useState<'local' | 'spotify' | 'soundcloud' | 'drive'>('local');
   const [soundCloudUrl, setSoundCloudUrl] = useState('https://soundcloud.com/dj-marcelo-1/classic-disco-mix-vol-1');
   const [soundCloudIframeUrl, setSoundCloudIframeUrl] = useState('');
   const [scBpm, setScBpm] = useState(120);
@@ -1515,7 +1542,7 @@ export default function EntrenamientoView({
         const calculatedBpm = Math.round(60000 / avgInterval);
         // Only update if it's within a sensible dance range (60 - 200 BPM)
         if (calculatedBpm >= 60 && calculatedBpm <= 200) {
-          setScBpm(calculatedBpm);
+          setTimeout(() => setScBpm(calculatedBpm), 0);
         }
       }
       return newTaps;
@@ -1564,8 +1591,10 @@ export default function EntrenamientoView({
             speakCount(nextBeat, scBpm);
           }
           
-          setScPulse(true);
-          setTimeout(() => setScPulse(false), 120);
+          setTimeout(() => {
+            setScPulse(true);
+            setTimeout(() => setScPulse(false), 120);
+          }, 0);
           
           return nextBeat;
         });
@@ -1588,35 +1617,38 @@ export default function EntrenamientoView({
       // Seconds clock countdown
       clockInterval = setInterval(() => {
         setTimeLeft((prev) => {
-          if (prev <= 1) {
-            setIsDrillRunning(false);
-            const completionMsg = 
-              language === 'es' ? "¡ENTRENAMIENTO COMPLETADO! Gran trabajo 🔥" :
-              language === 'ko' ? "트레이닝 완료! 아주 잘하셨습니다 🔥" :
-              language === 'ja' ? "トレーニング完了！お疲れ様でした 🔥" :
-              language === 'pt' ? "TREINAMENTO CONCLUÍDO! Bom trabalho 🔥" :
-              "TRAINING COMPLETED! Great job 🔥";
-            setCurrentPrompt(completionMsg);
-            const pointsEarned = Math.max(20, Math.ceil(drillDuration / 60) * 20);
-            if (onAddBonusPoints) {
-              onAddBonusPoints(pointsEarned);
-            }
-            if (onLogPractice) {
-              const logMsg = 
-                language === 'es' ? `Drill completado a ${drillBpm} BPM durante ${drillDuration} segundos` :
-                `Drill completed at ${drillBpm} BPM for ${drillDuration} seconds`;
-              onLogPractice(Math.ceil(drillDuration / 60), 'drill', logMsg);
-            }
-            triggerSummary({
-              durationSeconds: drillDuration,
-              activityType: `Drill de Velocidad (${drillBpm} BPM)`,
-              pointsEarned: pointsEarned,
-              details: `Marcación ${markingMode.toUpperCase()} • Ritmo metronómico a ${drillBpm} BPM`,
-              category: 'drill'
-            });
+          const next = prev - 1;
+          if (next <= 0) {
+            setTimeout(() => {
+              setIsDrillRunning(false);
+              const completionMsg = 
+                language === 'es' ? "¡ENTRENAMIENTO COMPLETADO! Gran trabajo 🔥" :
+                language === 'ko' ? "트레이닝 완료! 아주 잘하셨습니다 🔥" :
+                language === 'ja' ? "トレーニング完了！お疲れ様でした 🔥" :
+                language === 'pt' ? "TREINAMENTO CONCLUÍDO! Bom trabalho 🔥" :
+                "TRAINING COMPLETED! Great job 🔥";
+              setCurrentPrompt(completionMsg);
+              const pointsEarned = Math.max(20, Math.ceil(drillDuration / 60) * 20);
+              if (onAddBonusPoints) {
+                onAddBonusPoints(pointsEarned);
+              }
+              if (onLogPractice) {
+                const logMsg = 
+                  language === 'es' ? `Drill completado a ${drillBpm} BPM durante ${drillDuration} segundos` :
+                  `Drill completed at ${drillBpm} BPM for ${drillDuration} seconds`;
+                onLogPractice(Math.ceil(drillDuration / 60), 'drill', logMsg);
+              }
+              triggerSummary({
+                durationSeconds: drillDuration,
+                activityType: `Drill de Velocidad (${drillBpm} BPM)`,
+                pointsEarned: pointsEarned,
+                details: `Marcación ${markingMode.toUpperCase()} • Ritmo metronómico a ${drillBpm} BPM`,
+                category: 'drill'
+              });
+            }, 0);
             return 0;
           }
-          return prev - 1;
+          return next;
         });
       }, 1000);
 
@@ -1663,16 +1695,17 @@ export default function EntrenamientoView({
             speakCount(nextBeat, drillBpm);
           }
 
-          // Visual beat trigger
-          setFlashBeat(true);
-          setTimeout(() => setFlashBeat(false), 100);
+          // Visual beat trigger & prompt update
+          setTimeout(() => {
+            setFlashBeat(true);
+            setTimeout(() => setFlashBeat(false), 100);
 
-          // Change stimulation prompt on every new 8-count phrase (when nextBeat is 1)
-          if (nextBeat === 1) {
-            const list = LOCALIZED_DRILL_INSTRUCTIONS[language] || LOCALIZED_DRILL_INSTRUCTIONS.es;
-            const idx = Math.floor(Math.random() * list.length);
-            setCurrentPrompt(list[idx]);
-          }
+            if (nextBeat === 1) {
+              const list = LOCALIZED_DRILL_INSTRUCTIONS[language] || LOCALIZED_DRILL_INSTRUCTIONS.es;
+              const idx = Math.floor(Math.random() * list.length);
+              setCurrentPrompt(list[idx]);
+            }
+          }, 0);
 
           return nextBeat;
         });
@@ -1750,19 +1783,22 @@ export default function EntrenamientoView({
       // Seconds Countdown Timer
       timerInterval = setInterval(() => {
         setBattleTimeLeft((prev) => {
-          if (prev <= 1) {
+          const next = prev - 1;
+          if (next <= 0) {
             // End of practice round!
-            setIsBattleActive(false);
-            setBattleRound('ended');
-            setCheckedObjectives({});
-            setHasSavedPoints(false);
-            playSynthBeep(900, 0.15);
             setTimeout(() => {
-              playSynthBeep(1200, 0.25);
-            }, 100);
+              setIsBattleActive(false);
+              setBattleRound('ended');
+              setCheckedObjectives({});
+              setHasSavedPoints(false);
+              playSynthBeep(900, 0.15);
+              setTimeout(() => {
+                playSynthBeep(1200, 0.25);
+              }, 100);
+            }, 0);
             return 0;
           }
-          return prev - 1;
+          return next;
         });
       }, 1000);
 
@@ -1876,15 +1912,18 @@ export default function EntrenamientoView({
     if (tapChallengeStatus === 'countdown') {
       countdownInterval = setInterval(() => {
         setTapCountdownVal((prev) => {
-          if (prev <= 1) {
+          const next = prev - 1;
+          if (next <= 0) {
             clearInterval(countdownInterval);
-            setTapChallengeStatus('tapping');
-            setUserTaps([]);
+            setTimeout(() => {
+              setTapChallengeStatus('tapping');
+              setUserTaps([]);
+            }, 0);
             return 0;
           }
           // Play click for count
           playSynthBeep(880, 0.1);
-          return prev - 1;
+          return next;
         });
       }, 60000 / tapChallengeBpm);
     }
@@ -1974,15 +2013,18 @@ export default function EntrenamientoView({
 
       clockInterval = setInterval(() => {
         setComboTimeLeft((prev) => {
-          if (prev <= 1) {
-            setComboPracticeActive(false);
-            if (onAddBonusPoints) onAddBonusPoints(50); // Completed practice combo points
-            if (onLogPractice) {
-              onLogPractice(1, 'combo', `Combo Draft practicado a ${comboPracticeBpm} BPM: ${comboArms} + ${comboBody}`);
-            }
+          const next = prev - 1;
+          if (next <= 0) {
+            setTimeout(() => {
+              setComboPracticeActive(false);
+              if (onAddBonusPoints) onAddBonusPoints(50); // Completed practice combo points
+              if (onLogPractice) {
+                onLogPractice(1, 'combo', `Combo Draft practicado a ${comboPracticeBpm} BPM: ${comboArms} + ${comboBody}`);
+              }
+            }, 0);
             return 0;
           }
-          return prev - 1;
+          return next;
         });
       }, 1000);
 
@@ -1997,8 +2039,10 @@ export default function EntrenamientoView({
             playSynthBeep(600, 0.05);
           }
           
-          setComboFlash(true);
-          setTimeout(() => setComboFlash(false), 90);
+          setTimeout(() => {
+            setComboFlash(true);
+            setTimeout(() => setComboFlash(false), 90);
+          }, 0);
 
           return next;
         });
@@ -2618,24 +2662,28 @@ export default function EntrenamientoView({
   const lt = LAB_TRANSLATIONS[language] || LAB_TRANSLATIONS['es'];
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 bg-transparent text-[#EDEFF4] flex flex-col space-y-6 sm:space-y-8 w-full">
+    <div className="flex-1 min-h-full w-full p-4 sm:p-6 md:p-8 bg-transparent text-[#EDEFF4] flex flex-col space-y-6 sm:space-y-8">
       {/* Title Header with Glassmorphism Accent */}
       <div className="bg-gradient-to-r from-[#171322]/90 via-[#211a30]/80 to-[#12101b]/90 border border-white/15 p-6 sm:p-8 rounded-3xl backdrop-blur-xl shadow-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-6 relative overflow-hidden shrink-0">
         <div className="absolute -top-24 -right-24 w-72 h-72 bg-purple-600/15 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10">
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-[10px] font-mono font-black text-[#E9C349] bg-white/10 border border-[#E9C349]/40 px-3 py-1 rounded-full uppercase tracking-widest shadow-sm">
-              FREESTYLE LAB & ENTRENAMIENTO
+            <span className="text-[10px] font-mono font-black text-[#D9A9FF] bg-white/10 border border-[#D9A9FF]/40 px-3 py-1 rounded-full uppercase tracking-widest shadow-sm">
+              LABORATORIO DE FREESTYLES
             </span>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-display-lg italic text-white tracking-tight uppercase">{lt.title}</h2>
+          <h2 className="text-2xl sm:text-3xl font-display-lg italic text-white tracking-tight uppercase">
+            <span className="bg-gradient-to-r from-white via-[#FFF8E7] to-[#D9A9FF] bg-clip-text text-transparent drop-shadow-sm">
+              {lt.title}
+            </span>
+          </h2>
           <p className="text-xs sm:text-sm text-slate-300 font-medium mt-1 max-w-3xl leading-relaxed">{lt.subtitle}</p>
         </div>
         <button
           onClick={() => setShowDuelsModal(true)}
-          className="relative z-10 px-5 py-3 bg-[#E9C349]/20 hover:bg-[#E9C349]/30 border border-[#E9C349]/50 rounded-2xl text-[#E9C349] font-mono text-xs font-bold uppercase tracking-wider flex items-center gap-2.5 transition-all shadow-xl hover:scale-105 active:scale-95 cursor-pointer shrink-0 self-start sm:self-auto"
+          className="relative z-10 px-5 py-3 bg-[#D9A9FF]/20 hover:bg-[#D9A9FF]/30 border border-[#D9A9FF]/50 rounded-2xl text-[#D9A9FF] font-mono text-xs font-bold uppercase tracking-wider flex items-center gap-2.5 transition-all shadow-xl hover:scale-105 active:scale-95 cursor-pointer shrink-0 self-start sm:self-auto"
         >
-          <Swords className="w-4 h-4 text-[#E9C349] animate-bounce" />
+          <Swords className="w-4 h-4 text-[#D9A9FF] animate-bounce" />
           <span>⚔️ Duelos de Práctica</span>
         </button>
       </div>
@@ -2643,15 +2691,27 @@ export default function EntrenamientoView({
       {/* Navigation Sub-Tabs */}
       <div className="flex overflow-x-auto gap-3 border-b border-white/10 pb-4 scrollbar-none shrink-0 -mx-6 px-6 sm:mx-0 sm:px-0">
         <button
+          id="subtab-musicality"
+          onClick={() => setSubTab('musicality')}
+          className={`group h-11 min-w-[210px] px-4 py-2 text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-2 border rounded-xl shrink-0 focus:outline-none ${
+            subTab === 'musicality' 
+              ? 'bg-[#D9A9FF] text-black border-[#D9A9FF] shadow-xl font-black' 
+              : 'bg-[#121212] text-[#D9A9FF] border-[#D9A9FF]/40 hover:bg-[#D9A9FF]/10'
+          }`}
+        >
+          <Radio className="w-4 h-4 shrink-0 transition-transform duration-300 group-hover:scale-125 animate-pulse" />
+          🎵 LAB MUSICALIDAD (3 TEMPOS)
+        </button>
+        <button
           id="subtab-drill"
           onClick={() => setSubTab('drill')}
           className={`group h-11 min-w-[150px] px-4 py-2 text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-2 border rounded-xl shrink-0 focus:outline-none ${
             subTab === 'drill' 
-              ? 'bg-[#9A2B3C] text-white border-[#9A2B3C] shadow-lg' 
-              : 'bg-[#121212] text-[#8A8A8A] border-[#262626] hover:text-white hover:border-[#E9C349]/30'
+              ? 'bg-[#C23E9E] text-white border-[#C23E9E] shadow-lg' 
+              : 'bg-[#121212] text-[#8A8A8A] border-[#262626] hover:text-white hover:border-[#D9A9FF]/30'
           }`}
         >
-          <Timer className="w-4 h-4 text-[#E9C349] shrink-0 transition-transform duration-300 group-hover:scale-125 group-hover:rotate-12 group-active:scale-90" />
+          <Timer className="w-4 h-4 text-[#D9A9FF] shrink-0 transition-transform duration-300 group-hover:scale-125 group-hover:rotate-12 group-active:scale-90" />
           {lt.drillTab}
         </button>
         <button
@@ -2659,11 +2719,11 @@ export default function EntrenamientoView({
           onClick={() => setSubTab('battle')}
           className={`group h-11 min-w-[150px] px-4 py-2 text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-2 border rounded-xl shrink-0 focus:outline-none ${
             subTab === 'battle' 
-              ? 'bg-[#9A2B3C] text-white border-[#9A2B3C] shadow-lg' 
-              : 'bg-[#121212] text-[#8A8A8A] border-[#262626] hover:text-white hover:border-[#E9C349]/30'
+              ? 'bg-[#C23E9E] text-white border-[#C23E9E] shadow-lg' 
+              : 'bg-[#121212] text-[#8A8A8A] border-[#262626] hover:text-white hover:border-[#D9A9FF]/30'
           }`}
         >
-          <Swords className="w-4 h-4 text-[#E9C349] shrink-0 transition-transform duration-300 group-hover:scale-125 group-hover:-rotate-12 group-active:scale-90" />
+          <Swords className="w-4 h-4 text-[#D9A9FF] shrink-0 transition-transform duration-300 group-hover:scale-125 group-hover:-rotate-12 group-active:scale-90" />
           {lt.battleTab}
         </button>
         <button
@@ -2671,11 +2731,11 @@ export default function EntrenamientoView({
           onClick={() => setSubTab('combos')}
           className={`group h-11 min-w-[150px] px-4 py-2 text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-2 border rounded-xl shrink-0 focus:outline-none ${
             subTab === 'combos' 
-              ? 'bg-[#9A2B3C] text-white border-[#9A2B3C] shadow-lg' 
-              : 'bg-[#121212] text-[#8A8A8A] border-[#262626] hover:text-white hover:border-[#E9C349]/30'
+              ? 'bg-[#C23E9E] text-white border-[#C23E9E] shadow-lg' 
+              : 'bg-[#121212] text-[#8A8A8A] border-[#262626] hover:text-white hover:border-[#D9A9FF]/30'
           }`}
         >
-          <Shuffle className="w-4 h-4 text-[#E9C349] shrink-0 transition-transform duration-300 group-hover:scale-125 group-hover:rotate-180 group-active:scale-90" />
+          <Shuffle className="w-4 h-4 text-[#D9A9FF] shrink-0 transition-transform duration-300 group-hover:scale-125 group-hover:rotate-180 group-active:scale-90" />
           {lt.combosTab}
         </button>
         <button
@@ -2683,11 +2743,11 @@ export default function EntrenamientoView({
           onClick={() => setSubTab('sensorial')}
           className={`group h-11 min-w-[150px] px-4 py-2 text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-2 border rounded-xl shrink-0 focus:outline-none ${
             subTab === 'sensorial' 
-              ? 'bg-[#9A2B3C] text-white border-[#9A2B3C] shadow-lg' 
-              : 'bg-[#121212] text-[#8A8A8A] border-[#262626] hover:text-white hover:border-[#E9C349]/30'
+              ? 'bg-[#C23E9E] text-white border-[#C23E9E] shadow-lg' 
+              : 'bg-[#121212] text-[#8A8A8A] border-[#262626] hover:text-white hover:border-[#D9A9FF]/30'
           }`}
         >
-          <EyeOff className="w-4 h-4 text-[#E9C349] shrink-0 transition-transform duration-300 group-hover:scale-125 group-hover:rotate-12 group-active:scale-90" />
+          <EyeOff className="w-4 h-4 text-[#D9A9FF] shrink-0 transition-transform duration-300 group-hover:scale-125 group-hover:rotate-12 group-active:scale-90" />
           {lt.sensorialTab}
         </button>
         <button
@@ -2695,12 +2755,25 @@ export default function EntrenamientoView({
           onClick={() => setSubTab('somatic')}
           className={`group h-11 min-w-[150px] px-4 py-2 text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-2 border rounded-xl shrink-0 focus:outline-none ${
             subTab === 'somatic' 
-              ? 'bg-[#9A2B3C] text-white border-[#9A2B3C] shadow-lg' 
-              : 'bg-[#121212] text-[#8A8A8A] border-[#262626] hover:text-white hover:border-[#E9C349]/30'
+              ? 'bg-[#C23E9E] text-white border-[#C23E9E] shadow-lg' 
+              : 'bg-[#121212] text-[#8A8A8A] border-[#262626] hover:text-white hover:border-[#D9A9FF]/30'
           }`}
         >
-          <Activity className="w-4 h-4 text-[#E9C349] shrink-0 transition-transform duration-300 group-hover:scale-125 group-hover:rotate-12 group-active:scale-90" />
+          <Activity className="w-4 h-4 text-[#D9A9FF] shrink-0 transition-transform duration-300 group-hover:scale-125 group-hover:rotate-12 group-active:scale-90" />
           {lt.somaticTab}
+          {currentUser.billingStatus !== 'active' && <Lock className="w-3.5 h-3.5 text-primary ml-1 shrink-0 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-12" />}
+        </button>
+        <button
+          id="subtab-trazos"
+          onClick={() => setSubTab('trazos')}
+          className={`group h-11 min-w-[180px] px-4 py-2 text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-2 border rounded-xl shrink-0 focus:outline-none ${
+            subTab === 'trazos'
+              ? 'bg-[#C23E9E] text-white border-[#C23E9E] shadow-lg'
+              : 'bg-[#121212] text-[#8A8A8A] border-[#262626] hover:text-white hover:border-[#D9A9FF]/30'
+          }`}
+        >
+          <Camera className="w-4 h-4 text-[#D9A9FF] shrink-0 transition-transform duration-300 group-hover:scale-125 group-hover:rotate-12 group-active:scale-90" />
+          {language === 'es' ? 'TRAZOS DE MOVIMIENTO' : 'MOVEMENT TRAILS'}
           {currentUser.billingStatus !== 'active' && <Lock className="w-3.5 h-3.5 text-primary ml-1 shrink-0 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-12" />}
         </button>
         <button
@@ -2708,11 +2781,11 @@ export default function EntrenamientoView({
           onClick={() => setSubTab('drama')}
           className={`group h-11 min-w-[180px] px-4 py-2 text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-2 border rounded-xl shrink-0 focus:outline-none ${
             subTab === 'drama' 
-              ? 'bg-[#9A2B3C] text-white border-[#9A2B3C] shadow-lg' 
-              : 'bg-[#121212] text-[#8A8A8A] border-[#262626] hover:text-white hover:border-[#E9C349]/30'
+              ? 'bg-[#C23E9E] text-white border-[#C23E9E] shadow-lg' 
+              : 'bg-[#121212] text-[#8A8A8A] border-[#262626] hover:text-white hover:border-[#D9A9FF]/30'
           }`}
         >
-          <Smile className="w-4 h-4 text-[#E9C349] shrink-0 transition-transform duration-300 group-hover:scale-125 group-hover:rotate-12 group-active:scale-90" />
+          <Smile className="w-4 h-4 text-[#D9A9FF] shrink-0 transition-transform duration-300 group-hover:scale-125 group-hover:rotate-12 group-active:scale-90" />
           {DRAMA_TRANSLATIONS[language]?.tab || '🎭 LAB DE EXPRESIÓN'}
           {currentUser.billingStatus !== 'active' && <Lock className="w-3.5 h-3.5 text-primary ml-1 shrink-0 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-12" />}
         </button>
@@ -2721,11 +2794,11 @@ export default function EntrenamientoView({
           onClick={() => setSubTab('playlists')}
           className={`group h-11 min-w-[150px] px-4 py-2 text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-2 border rounded-xl shrink-0 focus:outline-none ${
             subTab === 'playlists' 
-              ? 'bg-[#9A2B3C] text-white border-[#9A2B3C] shadow-lg' 
-              : 'bg-[#121212] text-[#8A8A8A] border-[#262626] hover:text-white hover:border-[#E9C349]/30'
+              ? 'bg-[#C23E9E] text-white border-[#C23E9E] shadow-lg' 
+              : 'bg-[#121212] text-[#8A8A8A] border-[#262626] hover:text-white hover:border-[#D9A9FF]/30'
           }`}
         >
-          <Music className="w-4 h-4 text-[#E9C349] shrink-0 transition-transform duration-300 group-hover:scale-125 group-hover:-rotate-12 group-active:scale-90" />
+          <Music className="w-4 h-4 text-[#D9A9FF] shrink-0 transition-transform duration-300 group-hover:scale-125 group-hover:-rotate-12 group-active:scale-90" />
           {lt.playlistsTab}
         </button>
         <button
@@ -2733,11 +2806,11 @@ export default function EntrenamientoView({
           onClick={() => setSubTab('feedback')}
           className={`group h-11 min-w-[150px] px-4 py-2 text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-2 border rounded-xl shrink-0 focus:outline-none ${
             subTab === 'feedback' 
-              ? 'bg-[#9A2B3C] text-white border-[#9A2B3C] shadow-lg' 
-              : 'bg-[#121212] text-[#8A8A8A] border-[#262626] hover:text-white hover:border-[#E9C349]/30'
+              ? 'bg-[#C23E9E] text-white border-[#C23E9E] shadow-lg' 
+              : 'bg-[#121212] text-[#8A8A8A] border-[#262626] hover:text-white hover:border-[#D9A9FF]/30'
           }`}
         >
-          <MessageSquare className="w-4 h-4 text-[#E9C349] shrink-0 transition-transform duration-300 group-hover:scale-125 group-hover:rotate-12 group-active:scale-90" />
+          <MessageSquare className="w-4 h-4 text-[#D9A9FF] shrink-0 transition-transform duration-300 group-hover:scale-125 group-hover:rotate-12 group-active:scale-90" />
           {lt.feedbackTab}
         </button>
         <button
@@ -2745,11 +2818,11 @@ export default function EntrenamientoView({
           onClick={() => setSubTab('rhythm')}
           className={`group h-11 min-w-[170px] px-4 py-2 text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-2 border rounded-xl shrink-0 focus:outline-none ${
             subTab === 'rhythm' 
-              ? 'bg-[#9A2B3C] text-white border-[#9A2B3C] shadow-lg' 
-              : 'bg-[#121212] text-[#8A8A8A] border-[#262626] hover:text-white hover:border-[#E9C349]/30'
+              ? 'bg-[#C23E9E] text-white border-[#C23E9E] shadow-lg' 
+              : 'bg-[#121212] text-[#8A8A8A] border-[#262626] hover:text-white hover:border-[#D9A9FF]/30'
           }`}
         >
-          <Zap className="w-4 h-4 text-[#E9C349] shrink-0 transition-transform duration-300 group-hover:scale-125 group-hover:rotate-12 group-active:scale-90 animate-pulse" />
+          <Zap className="w-4 h-4 text-[#D9A9FF] shrink-0 transition-transform duration-300 group-hover:scale-125 group-hover:rotate-12 group-active:scale-90 animate-pulse" />
           🎮 BEAT TRAINER
         </button>
         <button
@@ -2757,17 +2830,40 @@ export default function EntrenamientoView({
           onClick={() => setSubTab('spectrum')}
           className={`group h-11 min-w-[180px] px-4 py-2 text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-2 border rounded-xl shrink-0 focus:outline-none ${
             subTab === 'spectrum' 
-              ? 'bg-[#9A2B3C] text-white border-[#9A2B3C] shadow-lg' 
-              : 'bg-[#121212] text-[#8A8A8A] border-[#262626] hover:text-white hover:border-[#E9C349]/30'
+              ? 'bg-[#C23E9E] text-white border-[#C23E9E] shadow-lg' 
+              : 'bg-[#121212] text-[#8A8A8A] border-[#262626] hover:text-white hover:border-[#D9A9FF]/30'
           }`}
         >
-          <BarChart2 className="w-4 h-4 text-[#E9C349] shrink-0 transition-transform duration-300 group-hover:scale-125 group-hover:-rotate-12 group-active:scale-90" />
+          <BarChart2 className="w-4 h-4 text-[#D9A9FF] shrink-0 transition-transform duration-300 group-hover:scale-125 group-hover:-rotate-12 group-active:scale-90" />
           📊 ESPECTRO AUDIO
         </button>
+
+        {onOpenSpotifyPlayer && (
+          <button
+            id="open-spotify-training-btn"
+            onClick={onOpenSpotifyPlayer}
+            className="group h-11 px-4 py-2 text-xs font-mono font-black tracking-wider transition-all flex items-center justify-center gap-2 border rounded-xl shrink-0 focus:outline-none bg-[#1DB954]/15 border-[#1DB954]/40 text-[#1DB954] hover:bg-[#1DB954] hover:text-black shadow-md cursor-pointer ml-auto"
+            title="Abrir reproductor de Spotify para bailar"
+          >
+            <Music className="w-4 h-4 text-inherit shrink-0 transition-transform group-hover:scale-125" />
+            <span>Música Spotify</span>
+          </button>
+        )}
       </div>
 
       {/* SUB-TABS CONTENT */}
       <div className="flex-1 flex flex-col">
+
+        {/* TAB: AI POSE LAB */}
+        {subTab === 'pose_lab' && (
+          <AIPoseLab
+            currentUser={currentUser}
+            onAddBonusPoints={onAddBonusPoints}
+            onLogPractice={onLogPractice}
+            language={language}
+            theme={theme}
+          />
+        )}
 
         {/* TAB: DRAMA & FACIAL EXPRESSION LABORATORY */}
         {subTab === 'drama' && (
@@ -2784,6 +2880,7 @@ export default function EntrenamientoView({
             onAddBonusPoints={onAddBonusPoints}
             onLogPractice={onLogPractice}
             currentUser={currentUser}
+            bpm={trainingBpm || scBpm || drillBpm || 120}
           />
         )}
 
@@ -2899,6 +2996,7 @@ export default function EntrenamientoView({
         {subTab === 'playlists' && (
           <PlaylistsLab
             language={language}
+            currentUser={currentUser}
             playlists={playlists}
             playlistMode={playlistMode}
             setPlaylistMode={setPlaylistMode}
@@ -3077,13 +3175,22 @@ Right Arm Extension: ${rightUserAngle.toFixed(1)}°
                       <input 
                         type="file" 
                         accept="video/*" 
-                        onChange={(e) => {
+                        onChange={async (e) => {
                           const file = e.target.files?.[0];
                           if (file) {
                             const url = URL.createObjectURL(file);
                             setSomaticUploadedVideo(url);
                             setSomaticReferenceVideo(url);
                             triggerToast(language === 'es' ? "¡Video de referencia cargado correctamente!" : "Reference video uploaded successfully!");
+                            try {
+                              const storageRef = ref(storage, `somatic_videos/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`);
+                              const snapshot = await uploadBytes(storageRef, file);
+                              const downloadUrl = await getDownloadURL(snapshot.ref);
+                              setSomaticUploadedVideo(downloadUrl);
+                              setSomaticReferenceVideo(downloadUrl);
+                            } catch (err) {
+                              console.warn("Storage video upload notice:", err);
+                            }
                           }
                         }}
                         className="hidden" 
@@ -3150,7 +3257,7 @@ Right Arm Extension: ${rightUserAngle.toFixed(1)}°
                         onClick={() => setSomaticReferenceVideo(somaticUploadedVideo)}
                         className={`px-3 py-2 rounded-xl text-[10px] font-semibold tracking-wide transition-all border ${
                           somaticReferenceVideo === somaticUploadedVideo
-                            ? 'bg-[#9A2B3C] text-white border-[#9A2B3C] font-bold shadow-md'
+                            ? 'bg-[#C23E9E] text-white border-[#C23E9E] font-bold shadow-md'
                             : 'bg-black/30 text-red-300 border-red-500/10 hover:border-red-500/30'
                         }`}
                       >
@@ -3176,7 +3283,12 @@ Right Arm Extension: ${rightUserAngle.toFixed(1)}°
 
                     <div 
                       ref={containerRef}
-                      className="relative aspect-[4/3] w-full bg-[#08080a] border border-tertiary/10 rounded-2xl overflow-hidden shadow-2xl"
+                      className={`relative aspect-[4/3] w-full bg-[#08080a] border rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 ${
+                        somaticCameraActive 
+                          ? 'animate-bpm-pulse border-[#D9A9FF]/60 shadow-[0_0_25px_rgba(217, 169, 255,0.2)]' 
+                          : 'border-tertiary/10'
+                      }`}
+                      style={{ '--bpm-pulse-duration': `${(60 / (trainingBpm || scBpm || drillBpm || 120)).toFixed(3)}s` } as React.CSSProperties}
                     >
                       {/* Grid background overlay */}
                       {gridVisible && (
@@ -3254,7 +3366,7 @@ Right Arm Extension: ${rightUserAngle.toFixed(1)}°
                             className={`absolute w-3.5 h-3.5 rounded-full border border-white cursor-pointer -translate-x-1/2 -translate-y-1/2 z-30 transition-shadow ${
                               activeDragJoint === key 
                                 ? 'bg-red-500 scale-125 shadow-[0_0_12px_#ef4444]' 
-                                : 'bg-tertiary shadow-[0_0_8px_#e9c349]'
+                                : 'bg-tertiary shadow-[0_0_8px_#d9a9ff]'
                             }`}
                             style={{ left: `${joint.x}%`, top: `${joint.y}%` }}
                             title={`Arrastra para calibrar referencia: ${key}`}
@@ -3338,11 +3450,22 @@ Right Arm Extension: ${rightUserAngle.toFixed(1)}°
 
                     <div 
                       ref={userCameraContainerRef}
-                      className="relative aspect-[4/3] w-full bg-[#08080a] border border-tertiary/10 rounded-2xl overflow-hidden shadow-2xl flex items-center justify-center text-center"
+                      className={`relative aspect-[4/3] w-full bg-[#08080a] border rounded-2xl overflow-hidden shadow-2xl flex items-center justify-center text-center transition-all duration-300 ${
+                        somaticCameraActive 
+                          ? 'animate-bpm-pulse border-[#D9A9FF]/80 shadow-[0_0_30px_rgba(217, 169, 255,0.3)]' 
+                          : 'border-tertiary/10'
+                      }`}
+                      style={{ '--bpm-pulse-duration': `${(60 / (trainingBpm || scBpm || drillBpm || 120)).toFixed(3)}s` } as React.CSSProperties}
                     >
                       {/* Active Webcam Feed */}
                       {somaticCameraActive ? (
                         <>
+                          {/* Inner BPM Rhythm Ring */}
+                          <div 
+                            className="absolute inset-0 pointer-events-none rounded-2xl border-2 border-[#D9A9FF]/40 animate-bpm-ring z-15"
+                            style={{ '--bpm-pulse-duration': `${(60 / (trainingBpm || scBpm || drillBpm || 120)).toFixed(3)}s` } as React.CSSProperties}
+                          />
+
                           <video 
                             ref={somaticVideoRef}
                             autoPlay 
@@ -3806,6 +3929,21 @@ Right Arm Extension: ${rightUserAngle.toFixed(1)}°
           </div>
           )
         )}
+        {subTab === 'trazos' && (
+          currentUser.billingStatus !== 'active' ? (
+            <PremiumGate
+              language={language}
+              sectionName="diary"
+              onSubscribe={() => onUserChange && onUserChange({ ...currentUser, billingStatus: 'active' })}
+            />
+          ) : (
+            <MovementTrailStudio
+              language={language}
+              onAddBonusPoints={onAddBonusPoints}
+              onLogPractice={onLogPractice}
+            />
+          )
+        )}
         {subTab === 'feedback' && (
           <SomaticFeedbackLab
             currentUser={currentUser}
@@ -3835,8 +3973,23 @@ Right Arm Extension: ${rightUserAngle.toFixed(1)}°
           />
         )}
 
+        {subTab === 'musicality' && (
+          <SmartMusicalityTrainer 
+            language={language} 
+            onAddBonusPoints={onAddBonusPoints} 
+            theme={theme}
+          />
+        )}
+
         {subTab === 'spectrum' && (
-          <AudioSpectrumVisualizer />
+          <AudioSpectrumVisualizer 
+            bpm={trainingBpm || drillBpm || 120} 
+            onBpmChange={(newBpm) => {
+              setDrillBpm(newBpm);
+              if (onBpmChange) onBpmChange(newBpm);
+            }}
+            theme={theme}
+          />
         )}
 
       </div>

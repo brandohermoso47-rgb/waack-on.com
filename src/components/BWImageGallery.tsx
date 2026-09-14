@@ -1,13 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Camera, Eye, Sparkles, Filter, Download, Check, RefreshCw, ZoomIn, X, Image as ImageIcon, Upload, Plus, Trash2, User as UserIcon } from 'lucide-react';
+import { 
+  Camera, 
+  Eye, 
+  Sparkles, 
+  Filter, 
+  Download, 
+  Check, 
+  RefreshCw, 
+  ZoomIn, 
+  X, 
+  Image as ImageIcon, 
+  Upload, 
+  Plus, 
+  Trash2, 
+  User as UserIcon,
+  Heart,
+  Star,
+  BookmarkCheck
+} from 'lucide-react';
 import Logo from './Logo';
 import { User } from '../types';
+import { db, auth, storage } from '../firebase';
+import { doc, setDoc, deleteDoc, collection, onSnapshot } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 export interface BWImageItem {
   id: string;
   title: string;
-  category: 'emblema' | 'poses' | 'batallas' | 'anatomia' | 'estudio' | 'mis_fotos' | 'eventos' | 'entrenamiento' | 'comunidad';
+  category: 'emblema' | 'poses' | 'batallas' | 'anatomia' | 'estudio' | 'mis_fotos' | 'eventos' | 'entrenamiento' | 'comunidad' | 'favoritos';
   url: string;
   caption: string;
   photographer: string;
@@ -141,8 +162,15 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
   const [activeTabLogoMode, setActiveTabLogoMode] = useState<'both' | 'light' | 'dark'>('both');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  // Favorites state synced with Firestore subcollection users/{userId}/favoritos
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+  const [cloudFavoriteItems, setCloudFavoriteItems] = useState<BWImageItem[]>([]);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [recentHeartbeatId, setRecentHeartbeatId] = useState<string | null>(null);
+
   // User uploaded photos state persisted in localStorage
-  const storageKey = currentUser ? `waackon_bw_photos_${currentUser.id}` : 'waackon_bw_photos_guest';
+  const activeUserId = currentUser?.id || auth.currentUser?.uid;
+  const storageKey = activeUserId ? `waackon_bw_photos_${activeUserId}` : 'waackon_bw_photos_guest';
   const [userImages, setUserImages] = useState<BWImageItem[]>(() => {
     const saved = localStorage.getItem(storageKey);
     if (saved) {
@@ -164,11 +192,115 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
     localStorage.setItem(storageKey, JSON.stringify(userImages));
   }, [userImages, storageKey]);
 
-  const allImages = [...(userImages || []), ...(BW_IMAGES_CATALOG || [])];
+  // Real-time listener for user favorites in Firestore
+  useEffect(() => {
+    const authedUid = auth.currentUser?.uid;
+    if (!authedUid) {
+      const localFavs = localStorage.getItem(`waackon_bw_favs_${activeUserId || 'guest'}`);
+      if (localFavs) {
+        try { setFavoriteIds(JSON.parse(localFavs)); } catch (e) { console.error(e); }
+      }
+      return;
+    }
+
+    const favoritosRef = collection(db, 'users', authedUid, 'favoritos');
+    const unsubscribe = onSnapshot(
+      favoritosRef,
+      (snapshot) => {
+        const ids: string[] = [];
+        const items: BWImageItem[] = [];
+        snapshot.forEach((docSnap) => {
+          ids.push(docSnap.id);
+          const data = docSnap.data();
+          if (data && data.url) {
+            items.push({
+              id: docSnap.id,
+              title: data.title || 'Foto Favorita',
+              category: (data.category as any) || 'mis_fotos',
+              url: data.url,
+              caption: data.caption || '',
+              photographer: data.photographer || 'Waack On',
+              bpmStyle: data.bpmStyle || '',
+              isMonochromeNative: data.isMonochromeNative ?? true,
+              isUserUploaded: data.isUserUploaded ?? false,
+            });
+          }
+        });
+        setFavoriteIds(ids);
+        setCloudFavoriteItems(items);
+        localStorage.setItem(`waackon_bw_favs_${activeUserId}`, JSON.stringify(ids));
+      },
+      (err) => {
+        console.warn("Firestore favoritos listener warning:", err);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [activeUserId]);
+
+  // Toggle favorite status and persist to Firestore subcollection 'favoritos'
+  const handleToggleFavorite = async (item: BWImageItem, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+
+    // Trigger heartbeat animation for visual feedback
+    setRecentHeartbeatId(item.id);
+    setTimeout(() => setRecentHeartbeatId(null), 850);
+
+    const isFav = favoriteIds.includes(item.id);
+    const newFavIds = isFav
+      ? favoriteIds.filter(id => id !== item.id)
+      : [...favoriteIds, item.id];
+
+    // Optimistic state update
+    setFavoriteIds(newFavIds);
+    const storageUid = activeUserId || 'guest';
+    localStorage.setItem(`waackon_bw_favs_${storageUid}`, JSON.stringify(newFavIds));
+
+    const authedUid = auth.currentUser?.uid;
+    if (authedUid) {
+      try {
+        const favDocRef = doc(db, 'users', authedUid, 'favoritos', item.id);
+        if (isFav) {
+          await deleteDoc(favDocRef);
+          setToastMessage('Eliminado de tus favoritos en Firestore');
+        } else {
+          await setDoc(favDocRef, {
+            id: item.id,
+            title: item.title,
+            category: item.category,
+            url: item.url,
+            caption: item.caption,
+            photographer: item.photographer,
+            bpmStyle: item.bpmStyle || '',
+            isMonochromeNative: item.isMonochromeNative ?? true,
+            isUserUploaded: item.isUserUploaded ?? false,
+            savedAt: new Date().toISOString()
+          }, { merge: true });
+          setToastMessage('❤️ Guardado en tus favoritos de Firestore');
+        }
+      } catch (err) {
+        console.error('Error al actualizar favorito en Firestore:', err);
+        setToastMessage('Guardado en favoritos (Local)');
+      }
+    } else {
+      setToastMessage(isFav ? 'Eliminado de favoritos local' : '❤️ Añadido a favoritos (Local)');
+    }
+
+    setTimeout(() => setToastMessage(null), 2500);
+  };
+
+  // Combine catalog + user uploaded + cloud favorites not in list
+  const catalogAndUser = [...(userImages || []), ...(BW_IMAGES_CATALOG || [])];
+  const missingCloudFavs = (cloudFavoriteItems || []).filter(
+    cf => !catalogAndUser.some(img => img.id === cf.id)
+  );
+  const allImages = [...catalogAndUser, ...missingCloudFavs];
 
   const filteredImages = selectedCategory === 'todos' 
     ? allImages 
-    : (allImages || []).filter(img => img && img.category === selectedCategory);
+    : selectedCategory === 'favoritos'
+      ? allImages.filter(img => img && favoriteIds.includes(img.id))
+      : (allImages || []).filter(img => img && img.category === selectedCategory);
 
   const handleCopyLink = (item: BWImageItem) => {
     navigator.clipboard.writeText(item.url);
@@ -176,7 +308,7 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
@@ -186,6 +318,17 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
         setUploadImageUrl(result);
       };
       reader.readAsDataURL(file);
+
+      try {
+        const fileExt = file.name.split('.').pop() || 'jpg';
+        const storageRef = ref(storage, `gallery_photos/${activeUserId || 'guest'}_${Date.now()}.${fileExt}`);
+        const uploadTask = await uploadBytes(storageRef, file);
+        const downloadUrl = await getDownloadURL(uploadTask.ref);
+        setUploadImageUrl(downloadUrl);
+        setUploadPreview(downloadUrl);
+      } catch (err) {
+        console.warn('Firebase Storage upload notice:', err);
+      }
     }
   };
 
@@ -239,15 +382,15 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
             <span className="text-xs font-mono text-[#8A8A8A]">Expediente Fotográfico</span>
           </div>
           <h2 className="text-2xl md:text-3xl font-black text-white tracking-tight flex items-center gap-3">
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-100 to-[#E9C349]">
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-100 to-[#D9A9FF]">
               Galería Fotográfica en Blanco y Negro
             </span>
-            <span className="px-2.5 py-0.5 rounded-full bg-[#E9C349]/10 border border-[#E9C349]/30 text-[#E9C349] text-[10px] font-mono font-extrabold uppercase tracking-widest hidden sm:inline-block">
+            <span className="px-2.5 py-0.5 rounded-full bg-[#D9A9FF]/10 border border-[#D9A9FF]/30 text-[#D9A9FF] text-[10px] font-mono font-extrabold uppercase tracking-widest hidden sm:inline-block">
               HD Contrast
             </span>
           </h2>
           <p className="text-xs text-[#8A8A8A] max-w-2xl mt-1">
-            Sube tus propias fotos de práctica, analiza tus líneas corporales en alto contraste y explora la colección oficial y emblemas 3D de WAACK ON.
+            Sube tus propias fotos de práctica, analiza tus líneas corporales en alto contraste, guarda tus favoritas en tu perfil de Firestore y explora la colección oficial y emblemas 3D.
           </p>
         </div>
 
@@ -255,7 +398,7 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
         <div className="flex flex-wrap items-center gap-3 shrink-0">
           <button
             onClick={() => setShowUploadModal(true)}
-            className="px-4 py-2.5 bg-[#E9C349] hover:bg-yellow-300 text-black text-xs font-mono font-black rounded-2xl transition-all shadow-xl flex items-center gap-2 cursor-pointer active:scale-95"
+            className="px-4 py-2.5 bg-[#D9A9FF] hover:bg-yellow-300 text-black text-xs font-mono font-black rounded-2xl transition-all shadow-xl flex items-center gap-2 cursor-pointer active:scale-95"
           >
             <Upload className="w-4 h-4 stroke-[2.5]" />
             <span>SUBIR FOTO B&W</span>
@@ -320,9 +463,45 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {(activeTabLogoMode === 'both' || activeTabLogoMode === 'light') && (
             <div className="bg-white text-black p-6 rounded-3xl border-2 border-neutral-300 shadow-2xl flex flex-col items-center text-center space-y-4 group relative overflow-hidden transition-all hover:scale-[1.01]">
-              <span className="absolute top-3 left-3 bg-neutral-900 text-white text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-                Light Card Version
-              </span>
+              <div className="absolute top-3 left-3 flex items-center gap-2">
+                <span className="bg-neutral-900 text-white text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                  Light Card Version
+                </span>
+              </div>
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.85 }}
+                whileHover={{ scale: 1.08 }}
+                onClick={(e) => handleToggleFavorite(BW_IMAGES_CATALOG[0], e)}
+                className={`absolute top-3 right-3 p-2 rounded-full backdrop-blur-md transition-all shadow-md z-20 cursor-pointer border ${
+                  favoriteIds.includes('bw-logo-light')
+                    ? 'bg-rose-600 text-white border-rose-400 scale-105 shadow-rose-900/50'
+                    : 'bg-black/10 hover:bg-black/20 text-neutral-700 hover:text-rose-600 border-neutral-300'
+                }`}
+                title="Guardar emblema en favoritos"
+              >
+                <motion.div
+                  animate={
+                    recentHeartbeatId === 'bw-logo-light'
+                      ? {
+                          scale: [1, 1.5, 0.8, 1.35, 0.9, 1.2, 1],
+                          rotate: [0, -12, 12, -6, 6, 0]
+                        }
+                      : favoriteIds.includes('bw-logo-light')
+                        ? { scale: [1, 1.15, 0.95, 1.1, 1] }
+                        : { scale: 1 }
+                  }
+                  transition={
+                    recentHeartbeatId === 'bw-logo-light'
+                      ? { duration: 0.65, ease: "easeInOut" }
+                      : favoriteIds.includes('bw-logo-light')
+                        ? { repeat: Infinity, repeatDelay: 2.2, duration: 1.2, ease: "easeInOut" }
+                        : { duration: 0.2 }
+                  }
+                >
+                  <Heart className={`w-4 h-4 ${favoriteIds.includes('bw-logo-light') ? 'fill-white stroke-white' : ''}`} />
+                </motion.div>
+              </motion.button>
               <div className="w-44 h-44 my-2">
                 <Logo variant="full" mode="bw-light" />
               </div>
@@ -339,9 +518,45 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
 
           {(activeTabLogoMode === 'both' || activeTabLogoMode === 'dark') && (
             <div className="bg-[#050505] text-white p-6 rounded-3xl border-2 border-neutral-800 shadow-2xl flex flex-col items-center text-center space-y-4 group relative overflow-hidden transition-all hover:scale-[1.01]">
-              <span className="absolute top-3 left-3 bg-neutral-800 text-neutral-300 text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider border border-neutral-700">
-                Dark Card Version
-              </span>
+              <div className="absolute top-3 left-3 flex items-center gap-2">
+                <span className="bg-neutral-800 text-neutral-300 text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider border border-neutral-700">
+                  Dark Card Version
+                </span>
+              </div>
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.85 }}
+                whileHover={{ scale: 1.08 }}
+                onClick={(e) => handleToggleFavorite(BW_IMAGES_CATALOG[1], e)}
+                className={`absolute top-3 right-3 p-2 rounded-full backdrop-blur-md transition-all shadow-md z-20 cursor-pointer border ${
+                  favoriteIds.includes('bw-logo-dark')
+                    ? 'bg-rose-600 text-white border-rose-400 scale-105 shadow-rose-900/50'
+                    : 'bg-white/10 hover:bg-white/20 text-neutral-300 hover:text-rose-400 border-neutral-700'
+                }`}
+                title="Guardar emblema en favoritos"
+              >
+                <motion.div
+                  animate={
+                    recentHeartbeatId === 'bw-logo-dark'
+                      ? {
+                          scale: [1, 1.5, 0.8, 1.35, 0.9, 1.2, 1],
+                          rotate: [0, -12, 12, -6, 6, 0]
+                        }
+                      : favoriteIds.includes('bw-logo-dark')
+                        ? { scale: [1, 1.15, 0.95, 1.1, 1] }
+                        : { scale: 1 }
+                  }
+                  transition={
+                    recentHeartbeatId === 'bw-logo-dark'
+                      ? { duration: 0.65, ease: "easeInOut" }
+                      : favoriteIds.includes('bw-logo-dark')
+                        ? { repeat: Infinity, repeatDelay: 2.2, duration: 1.2, ease: "easeInOut" }
+                        : { duration: 0.2 }
+                  }
+                >
+                  <Heart className={`w-4 h-4 ${favoriteIds.includes('bw-logo-dark') ? 'fill-white stroke-white' : ''}`} />
+                </motion.div>
+              </motion.button>
               <div className="w-44 h-44 my-2">
                 <Logo variant="full" mode="bw-dark" />
               </div>
@@ -358,12 +573,13 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
         </div>
       </div>
 
-      {/* Gallery Container with ID galeria-contenedor for element selector */}
+      {/* Gallery Container */}
       <div id="galeria-contenedor" className="space-y-6">
         {/* Filter Buttons */}
         <div className="flex items-center gap-2 overflow-x-auto pb-3 scrollbar-none border-b border-[#262626]">
           {[
             { id: 'todos', label: 'Todas', count: allImages.length },
+            { id: 'favoritos', label: '❤️ Mis Favoritas', count: favoriteIds.length, isSpecial: true },
             { id: 'eventos', label: 'Eventos', count: allImages.filter(i => i.category === 'eventos').length },
             { id: 'entrenamiento', label: 'Entrenamiento', count: allImages.filter(i => i.category === 'entrenamiento').length },
             { id: 'comunidad', label: 'Comunidad', count: allImages.filter(i => i.category === 'comunidad').length },
@@ -379,13 +595,21 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
               onClick={() => setSelectedCategory(cat.id)}
               className={`px-4 py-2 rounded-xl text-xs font-mono font-bold transition-all shrink-0 cursor-pointer flex items-center gap-2 border ${
                 selectedCategory === cat.id
-                  ? 'bg-white text-black border-white shadow-lg scale-105 font-black'
-                  : 'bg-[#0A0A0A] text-[#8A8A8A] hover:text-white border-[#262626] hover:border-[#404040]'
+                  ? cat.isSpecial
+                    ? 'bg-rose-600 text-white border-rose-400 shadow-lg scale-105 font-black'
+                    : 'bg-white text-black border-white shadow-lg scale-105 font-black'
+                  : cat.isSpecial
+                    ? 'bg-rose-950/40 text-rose-300 hover:text-white border-rose-800/50 hover:border-rose-600'
+                    : 'bg-[#0A0A0A] text-[#8A8A8A] hover:text-white border-[#262626] hover:border-[#404040]'
               }`}
             >
               <span>{cat.label}</span>
               <span className={`px-2 py-0.5 rounded-full text-[10px] ${
-                selectedCategory === cat.id ? 'bg-black text-white font-black' : 'bg-[#1F1F1F] text-[#A0A0A0]'
+                selectedCategory === cat.id 
+                  ? 'bg-black text-white font-black' 
+                  : cat.isSpecial 
+                    ? 'bg-rose-900/80 text-rose-200' 
+                    : 'bg-[#1F1F1F] text-[#A0A0A0]'
               }`}>
                 {cat.count}
               </span>
@@ -395,82 +619,151 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
 
       {/* Grid of Black & White Images */}
       {filteredImages.length === 0 ? (
-        <div className="bg-[#0A0A0A] border border-dashed border-[#262626] rounded-3xl p-12 text-center space-y-4">
-          <Camera className="w-12 h-12 text-[#8A8A8A] mx-auto animate-pulse" />
-          <p className="text-sm font-bold text-white uppercase">Aún no has subido fotos a tu galería</p>
-          <p className="text-xs text-[#8A8A8A] max-w-md mx-auto">
-            Sube tus imágenes de entrenamiento o fotogramas de Waacking para analizarlos en blanco y negro de alto contraste.
-          </p>
-          <button
-            onClick={() => setShowUploadModal(true)}
-            className="px-5 py-2.5 bg-[#E9C349] text-black text-xs font-black rounded-xl uppercase shadow-lg hover:bg-yellow-300 transition-all"
-          >
-            Subir Mi Primera Foto
-          </button>
-        </div>
+        selectedCategory === 'favoritos' ? (
+          <div className="bg-[#0A0A0A] border border-dashed border-rose-900/40 rounded-3xl p-12 text-center space-y-4">
+            <Heart className="w-12 h-12 text-rose-500 mx-auto animate-bounce" />
+            <p className="text-sm font-bold text-white uppercase">Aún no tienes fotos marcadas como favoritas</p>
+            <p className="text-xs text-[#8A8A8A] max-w-md mx-auto">
+              Haz clic en el corazón ❤️ en cualquier fotograma o emblema 3D para guardarlo en tu subcolección de favoritos en Firestore.
+            </p>
+            <button
+              onClick={() => setSelectedCategory('todos')}
+              className="px-5 py-2.5 bg-rose-600 text-white text-xs font-black rounded-xl uppercase shadow-lg hover:bg-rose-500 transition-all cursor-pointer"
+            >
+              Explorar Toda la Galería
+            </button>
+          </div>
+        ) : (
+          <div className="bg-[#0A0A0A] border border-dashed border-[#262626] rounded-3xl p-12 text-center space-y-4">
+            <Camera className="w-12 h-12 text-[#8A8A8A] mx-auto animate-pulse" />
+            <p className="text-sm font-bold text-white uppercase">Aún no has subido fotos a tu galería</p>
+            <p className="text-xs text-[#8A8A8A] max-w-md mx-auto">
+              Sube tus imágenes de entrenamiento o fotogramas de Waacking para analizarlos en blanco y negro de alto contraste.
+            </p>
+            <button
+              onClick={() => setShowUploadModal(true)}
+              className="px-5 py-2.5 bg-[#D9A9FF] text-black text-xs font-black rounded-xl uppercase shadow-lg hover:bg-yellow-300 transition-all"
+            >
+              Subir Mi Primera Foto
+            </button>
+          </div>
+        )
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {filteredImages.map(item => (
-            <div
-              key={item.id}
-              onClick={() => setSelectedImage(item)}
-              className="group bg-[#0A0A0A] border border-[#262626] rounded-2xl overflow-hidden cursor-pointer hover:border-white transition-all duration-300 hover:shadow-[0_0_25px_rgba(255,255,255,0.15)] flex flex-col justify-between relative"
-            >
-              <div className="relative aspect-square overflow-hidden bg-black">
-                <img
-                  src={item.url}
-                  alt={item.title}
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-115 grayscale contrast-125"
-                />
-                {/* Smooth Gradient Overlay with Image Title on Hover */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 p-4 flex flex-col justify-end backdrop-blur-[1px]">
-                  <span className="text-[10px] font-mono font-bold text-[#E9C349] uppercase tracking-wider mb-0.5">
-                    {item.bpmStyle || item.category}
-                  </span>
-                  <h3 className="text-xs sm:text-sm font-black text-white leading-tight drop-shadow-lg mb-2">
-                    {item.title}
-                  </h3>
-                  <span className="text-[10px] font-bold text-white flex items-center gap-1.5 bg-white/20 backdrop-blur-md px-2.5 py-1 rounded-lg w-fit border border-white/30 shadow-md">
-                    <ZoomIn className="w-3.5 h-3.5 text-white" /> Ampliar Fotograma
-                  </span>
-                </div>
+          {filteredImages.map(item => {
+            const isFav = favoriteIds.includes(item.id);
+            return (
+              <div
+                key={item.id}
+                onClick={() => setSelectedImage(item)}
+                className="group bg-[#0A0A0A] border border-[#262626] rounded-2xl overflow-hidden cursor-pointer hover:border-white transition-all duration-300 hover:shadow-[0_0_25px_rgba(255,255,255,0.15)] flex flex-col justify-between relative"
+              >
+                <div className="relative aspect-square overflow-hidden bg-black">
+                  <img
+                    src={item.url}
+                    alt={item.title}
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-115 grayscale contrast-125"
+                  />
+                  {/* Smooth Gradient Overlay with Image Title on Hover */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 p-4 flex flex-col justify-end backdrop-blur-[1px]">
+                    <span className="text-[10px] font-mono font-bold text-[#D9A9FF] uppercase tracking-wider mb-0.5">
+                      {item.bpmStyle || item.category}
+                    </span>
+                    <h3 className="text-xs sm:text-sm font-black text-white leading-tight drop-shadow-lg mb-2">
+                      {item.title}
+                    </h3>
+                    <span className="text-[10px] font-bold text-white flex items-center gap-1.5 bg-white/20 backdrop-blur-md px-2.5 py-1 rounded-lg w-fit border border-white/30 shadow-md">
+                      <ZoomIn className="w-3.5 h-3.5 text-white" /> Ampliar Fotograma
+                    </span>
+                  </div>
 
-                {item.isUserUploaded && (
-                  <span className="absolute top-2.5 left-2.5 px-2 py-0.5 bg-[#E9C349] text-black text-[9px] font-mono font-black rounded-md shadow-md uppercase">
-                    Mi Foto
-                  </span>
-                )}
-
-                <span className="absolute top-2.5 right-2.5 px-2 py-0.5 bg-black/80 backdrop-blur-md text-white text-[9px] font-mono font-bold rounded-md border border-white/20">
-                  B&W HD
-                </span>
-
-                {item.isUserUploaded && (
-                  <button
-                    onClick={(e) => handleDeleteUserPhoto(item.id, e)}
-                    className="absolute bottom-2.5 right-2.5 p-1.5 bg-rose-950/80 hover:bg-rose-600 text-rose-200 hover:text-white rounded-lg transition-all z-10 border border-rose-500/30"
-                    title="Eliminar foto"
+                  {/* Favorite Toggle Button on Image Corner */}
+                  <motion.button
+                    type="button"
+                    whileTap={{ scale: 0.8 }}
+                    whileHover={{ scale: 1.12 }}
+                    onClick={(e) => handleToggleFavorite(item, e)}
+                    className={`absolute top-2.5 right-2.5 p-2 rounded-full backdrop-blur-md transition-all shadow-lg z-20 cursor-pointer border ${
+                      isFav
+                        ? 'bg-rose-600/90 hover:bg-rose-600 text-white border-rose-400 scale-105 shadow-rose-950/80'
+                        : 'bg-black/60 hover:bg-black/90 text-white/80 hover:text-white border-white/20'
+                    }`}
+                    title={isFav ? "Quitar de favoritos" : "Guardar en favoritos de Firestore"}
+                    aria-label="Guardar en favoritos"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
+                    <motion.div
+                      animate={
+                        recentHeartbeatId === item.id
+                          ? {
+                              scale: [1, 1.55, 0.8, 1.35, 0.9, 1.2, 1],
+                              rotate: [0, -12, 12, -6, 6, 0]
+                            }
+                          : isFav
+                            ? { scale: [1, 1.15, 0.95, 1.1, 1] }
+                            : { scale: 1 }
+                      }
+                      transition={
+                        recentHeartbeatId === item.id
+                          ? { duration: 0.65, ease: "easeInOut" }
+                          : isFav
+                            ? { repeat: Infinity, repeatDelay: 2.2, duration: 1.2, ease: "easeInOut" }
+                            : { duration: 0.2 }
+                      }
+                    >
+                      <Heart
+                        className={`w-4 h-4 ${
+                          isFav ? 'fill-white stroke-white' : ''
+                        }`}
+                      />
+                    </motion.div>
+                  </motion.button>
 
-              <div className="p-3.5 space-y-1.5">
-                <h4 className="text-xs font-bold text-white line-clamp-1 group-hover:text-white">
-                  {item.title}
-                </h4>
-                <p className="text-[11px] text-[#8A8A8A] line-clamp-2 leading-relaxed">
-                  {item.caption}
-                </p>
-                <div className="pt-2 flex items-center justify-between border-t border-[#1C1C1C] text-[10px] font-mono text-[#666]">
-                  <span className="truncate max-w-[120px]">{item.photographer}</span>
-                  <span className="text-white font-semibold">B&W 100%</span>
+                  {item.isUserUploaded && (
+                    <span className="absolute top-2.5 left-2.5 px-2 py-0.5 bg-[#D9A9FF] text-black text-[9px] font-mono font-black rounded-md shadow-md uppercase z-10">
+                      Mi Foto
+                    </span>
+                  )}
+
+                  {!item.isUserUploaded && (
+                    <span className="absolute top-2.5 left-2.5 px-2 py-0.5 bg-black/80 backdrop-blur-md text-white text-[9px] font-mono font-bold rounded-md border border-white/20 z-10">
+                      B&W HD
+                    </span>
+                  )}
+
+                  {item.isUserUploaded && (
+                    <button
+                      onClick={(e) => handleDeleteUserPhoto(item.id, e)}
+                      className="absolute bottom-2.5 right-2.5 p-1.5 bg-rose-950/80 hover:bg-rose-600 text-rose-200 hover:text-white rounded-lg transition-all z-10 border border-rose-500/30"
+                      title="Eliminar foto"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="p-3.5 space-y-1.5">
+                  <div className="flex items-center justify-between gap-1">
+                    <h4 className="text-xs font-bold text-white line-clamp-1 group-hover:text-white">
+                      {item.title}
+                    </h4>
+                    {isFav && (
+                      <span className="text-[10px] text-rose-400 font-mono font-extrabold shrink-0 flex items-center gap-0.5">
+                        <Heart className="w-3 h-3 fill-rose-500 text-rose-500" />
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-[#8A8A8A] line-clamp-2 leading-relaxed">
+                    {item.caption}
+                  </p>
+                  <div className="pt-2 flex items-center justify-between border-t border-[#1C1C1C] text-[10px] font-mono text-[#666]">
+                    <span className="truncate max-w-[120px]">{item.photographer}</span>
+                    <span className="text-white font-semibold">B&W 100%</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
       </div>
@@ -494,7 +787,7 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
             >
               <div className="flex justify-between items-center border-b border-[#262626] pb-3">
                 <div className="flex items-center gap-2">
-                  <Camera className="w-5 h-5 text-[#E9C349]" />
+                  <Camera className="w-5 h-5 text-[#D9A9FF]" />
                   <h3 className="text-base font-black text-white uppercase tracking-tight">
                     Subir Foto a Mi Galería B&W
                   </h3>
@@ -514,7 +807,7 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
                     Seleccionar Imagen
                   </label>
 
-                  <div className="border-2 border-dashed border-[#333] hover:border-[#E9C349]/50 rounded-2xl p-4 text-center bg-[#0A0A0A] transition-all relative">
+                  <div className="border-2 border-dashed border-[#333] hover:border-[#D9A9FF]/50 rounded-2xl p-4 text-center bg-[#0A0A0A] transition-all relative">
                     {uploadPreview ? (
                       <div className="relative group">
                         <img
@@ -532,7 +825,7 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
                       </div>
                     ) : (
                       <div className="space-y-3 py-2">
-                        <Upload className="w-10 h-10 text-[#E9C349] mx-auto animate-bounce" />
+                        <Upload className="w-10 h-10 text-[#D9A9FF] mx-auto animate-bounce" />
                         <div className="text-xs text-[#8A8A8A]">
                           <span className="text-white font-bold block">Haz clic para buscar un archivo</span>
                           JPG, PNG, WebP
@@ -556,7 +849,7 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
                       setUploadImageUrl(e.target.value);
                       if (e.target.value) setUploadPreview(e.target.value);
                     }}
-                    className="w-full bg-[#0A0A0A] border border-[#262626] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#E9C349]"
+                    className="w-full bg-[#0A0A0A] border border-[#262626] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#D9A9FF]"
                   />
                 </div>
 
@@ -571,7 +864,7 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
                     placeholder="Ej: Ensayo de Port de Bras & Pose"
                     value={uploadTitle}
                     onChange={(e) => setUploadTitle(e.target.value)}
-                    className="w-full bg-[#0A0A0A] border border-[#262626] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#E9C349]"
+                    className="w-full bg-[#0A0A0A] border border-[#262626] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#D9A9FF]"
                   />
                 </div>
 
@@ -583,7 +876,7 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
                   <select
                     value={uploadCategory}
                     onChange={(e) => setUploadCategory(e.target.value as any)}
-                    className="w-full bg-[#0A0A0A] border border-[#262626] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#E9C349]"
+                    className="w-full bg-[#0A0A0A] border border-[#262626] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#D9A9FF]"
                   >
                     <option value="mis_fotos">Mis Fotos de Práctica</option>
                     <option value="eventos">Eventos</option>
@@ -606,7 +899,7 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
                     placeholder="Ej: Análisis del ángulo de los brazos en el acento rítmico..."
                     value={uploadCaption}
                     onChange={(e) => setUploadCaption(e.target.value)}
-                    className="w-full bg-[#0A0A0A] border border-[#262626] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#E9C349]"
+                    className="w-full bg-[#0A0A0A] border border-[#262626] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#D9A9FF]"
                   />
                 </div>
 
@@ -620,7 +913,7 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
                     placeholder="Ej: 128 BPM Waacking"
                     value={uploadBpm}
                     onChange={(e) => setUploadBpm(e.target.value)}
-                    className="w-full bg-[#0A0A0A] border border-[#262626] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#E9C349]"
+                    className="w-full bg-[#0A0A0A] border border-[#262626] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#D9A9FF]"
                   />
                 </div>
 
@@ -635,7 +928,7 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
                   <button
                     type="submit"
                     disabled={!uploadPreview && !uploadImageUrl}
-                    className="px-5 py-2 bg-[#E9C349] text-black text-xs font-black rounded-xl hover:bg-yellow-300 transition-all uppercase disabled:opacity-50"
+                    className="px-5 py-2 bg-[#D9A9FF] text-black text-xs font-black rounded-xl hover:bg-yellow-300 transition-all uppercase disabled:opacity-50"
                   >
                     Guardar Foto en B&W
                   </button>
@@ -689,6 +982,11 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
                       {selectedImage.category}
                     </span>
                     <span className="text-xs font-mono text-[#8A8A8A]">Fotografía B&W</span>
+                    {favoriteIds.includes(selectedImage.id) && (
+                      <span className="px-2 py-0.5 bg-rose-950 text-rose-300 border border-rose-800 font-mono font-bold text-[10px] rounded-full uppercase flex items-center gap-1 ml-auto">
+                        <Heart className="w-3 h-3 fill-rose-500 text-rose-500" /> Favorito
+                      </span>
+                    )}
                   </div>
 
                   <h3 className="text-xl font-black text-white leading-tight">
@@ -717,18 +1015,53 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
                   </div>
                 </div>
 
-                <div className="pt-3 border-t border-[#222] flex items-center gap-3">
+                <div className="pt-3 border-t border-[#222] flex flex-wrap items-center gap-2">
+                  <motion.button
+                    type="button"
+                    whileTap={{ scale: 0.95 }}
+                    whileHover={{ scale: 1.02 }}
+                    onClick={() => handleToggleFavorite(selectedImage)}
+                    className={`flex-1 min-w-[150px] px-4 py-2.5 text-xs font-bold font-mono rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow border ${
+                      favoriteIds.includes(selectedImage.id)
+                        ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-400 font-extrabold shadow-rose-900/50'
+                        : 'bg-[#1F1F1F] hover:bg-[#2A2A2A] text-white border-[#333]'
+                    }`}
+                  >
+                    <motion.div
+                      animate={
+                        recentHeartbeatId === selectedImage.id
+                          ? {
+                              scale: [1, 1.55, 0.8, 1.35, 0.9, 1.2, 1],
+                              rotate: [0, -12, 12, -6, 6, 0]
+                            }
+                          : favoriteIds.includes(selectedImage.id)
+                            ? { scale: [1, 1.15, 0.95, 1.1, 1] }
+                            : { scale: 1 }
+                      }
+                      transition={
+                        recentHeartbeatId === selectedImage.id
+                          ? { duration: 0.65, ease: "easeInOut" }
+                          : favoriteIds.includes(selectedImage.id)
+                            ? { repeat: Infinity, repeatDelay: 2.2, duration: 1.2, ease: "easeInOut" }
+                            : { duration: 0.2 }
+                      }
+                    >
+                      <Heart className={`w-4 h-4 ${favoriteIds.includes(selectedImage.id) ? 'fill-white stroke-white' : 'text-rose-400'}`} />
+                    </motion.div>
+                    <span>{favoriteIds.includes(selectedImage.id) ? '❤️ En Favoritos' : '🤍 Añadir a Favoritos'}</span>
+                  </motion.button>
+
                   <button
                     onClick={() => handleCopyLink(selectedImage)}
-                    className="flex-1 px-4 py-2.5 bg-white text-black hover:bg-neutral-200 text-xs font-bold font-mono rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow"
+                    className="px-4 py-2.5 bg-white text-black hover:bg-neutral-200 text-xs font-bold font-mono rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow"
                   >
                     {copiedId === selectedImage.id ? (
                       <>
-                        <Check className="w-4 h-4 text-emerald-600" /> ¡Enlace Copiado!
+                        <Check className="w-4 h-4 text-emerald-600" /> Copiado
                       </>
                     ) : (
                       <>
-                        <ImageIcon className="w-4 h-4" /> Copiar URL Imagen
+                        <ImageIcon className="w-4 h-4" /> Copiar URL
                       </>
                     )}
                   </button>
@@ -737,7 +1070,7 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
                     href={selectedImage.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-4 py-2.5 bg-[#222] hover:bg-[#333] text-white text-xs font-bold font-mono rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer border border-[#444]"
+                    className="px-3 py-2.5 bg-[#222] hover:bg-[#333] text-white text-xs font-bold font-mono rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer border border-[#444]"
                   >
                     Abrir HD
                   </a>
@@ -747,7 +1080,21 @@ export default function BWImageGallery({ isGrayscaleGlobal = false, onToggleGray
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Floating Toast Notification */}
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            className="fixed bottom-6 right-6 z-50 bg-[#181818] border border-rose-500/60 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 backdrop-blur-xl"
+          >
+            <Heart className="w-5 h-5 text-rose-500 fill-rose-500 animate-pulse" />
+            <span className="text-xs font-mono font-bold text-white">{toastMessage}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
-

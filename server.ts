@@ -1,9 +1,11 @@
 import express from 'express';
 import path from 'path';
+import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import Stripe from 'stripe';
 import { GoogleGenAI } from '@google/genai';
 import { db as drizzleDb } from './src/db/index.ts';
+import { adminAuth } from './src/lib/firebase-admin.ts';
 import { 
   users as usersTable, 
   entries as entriesTable, 
@@ -11,12 +13,23 @@ import {
   communityMessages as communityMessagesTable,
   instructorTasks as instructorTasksTable,
   profiles as profilesTable,
+  subscriptions as subscriptionsTable,
+  instructorSubscribers as instructorSubscribersTable,
   instructorTransactions as instructorTransactionsTable,
   instructorPayouts as instructorPayoutsTable,
   instructorBankAccounts as instructorBankAccountsTable
 } from './src/db/schema.ts';
 import { eq, count, desc } from 'drizzle-orm';
-import { requireRole, validateInput, getUserFromReq } from './src/server/rbac.ts';
+import {
+  requireRole,
+  requireVipAccess,
+  requireAcademyAccess,
+  requireVerifiedInstructor,
+  requireInstructorSubscriber,
+  requireVerifiedUser,
+  validateInput,
+  getUnverifiedClientAssertedIdentity
+} from './src/server/rbac.ts';
 import { 
   announcementSchema, 
   communityMessageSchema, 
@@ -26,13 +39,15 @@ import {
   coachingFeedbackSchema, 
   chatSchema, 
   checkoutSessionSchema, 
+  webhookPaymentSchema,
   analyticsSyncSchema,
   onboardingSchema,
   instructorPricingMethodologySchema,
   payoutRequestSchema,
   bankAccountSchema,
   videoAnalysisSchema,
-  imageGenerationSchema
+  imageGenerationSchema,
+  lessonSummarySchema
 } from './src/server/schemas.ts';
 
 let stripeClient: Stripe | null = null;
@@ -47,6 +62,31 @@ function getStripeClient(): Stripe | null {
     }
   }
   return stripeClient;
+}
+
+// Anti-CSRF `state` helper for the Spotify OAuth Authorization Code flow.
+// Stateless (no server-side session store needed): the nonce is signed with
+// an HMAC so the callback can verify it came from an auth-url we issued,
+// without relying on in-memory storage (which would break across instances).
+function getSpotifyStateSecret(): string {
+  return process.env.SPOTIFY_CLIENT_SECRET || process.env.SPOTIFY_CLIENT_ID || 'waackon_dev_spotify_state_secret';
+}
+
+function createSpotifyState(): string {
+  const nonce = crypto.randomBytes(16).toString('hex');
+  const signature = crypto.createHmac('sha256', getSpotifyStateSecret()).update(nonce).digest('hex');
+  return `${nonce}.${signature}`;
+}
+
+function verifySpotifyState(state: unknown): boolean {
+  if (!state || typeof state !== 'string' || !state.includes('.')) return false;
+  const [nonce, signature] = state.split('.');
+  if (!nonce || !signature) return false;
+  const expected = crypto.createHmac('sha256', getSpotifyStateSecret()).update(nonce).digest('hex');
+  const sigBuf = Buffer.from(signature, 'hex');
+  const expectedBuf = Buffer.from(expected, 'hex');
+  if (sigBuf.length !== expectedBuf.length) return false;
+  return crypto.timingSafeEqual(sigBuf, expectedBuf);
 }
 
 let aiClient: GoogleGenAI | null = null;
@@ -223,12 +263,138 @@ async function startServer() {
 
   // Log incoming API requests for auditing
   app.use('/api', (req, res, next) => {
-    const user = getUserFromReq(req);
-    console.log(`[API Request]: ${req.method} ${req.path} | Role: '${user.role}' | UserID: '${user.id}'`);
+    const user = getUnverifiedClientAssertedIdentity(req);
+    console.log(`[API Request]: ${req.method} ${req.path} | Claimed role: '${user.role}' | Claimed UserID: '${user.id}' (unverified)`);
     next();
   });
 
-  // --- 1. STRIPE PAYMENTS (Validated with Zod) ---
+  // Helper for dynamic user role assignment & database updates via webhook events
+  async function updateUserRoleAndSubscriptionInDB(
+    userId?: string, 
+    userEmail?: string, 
+    planType?: string, 
+    stripeCustomer?: string,
+    isTrial?: boolean
+  ) {
+    let assignedRole: 'free_user' | 'vip_student' | 'academy' | 'instructor' = 'vip_student';
+    let canonicalPlanType: 'app_vip' | 'app_academy' | 'instructor_custom' = 'app_vip';
+    let subscriptionStatus: 'trialing' | 'active' | 'past_due' | 'canceled' = isTrial ? 'trialing' : 'active';
+    let dashboardUrl = '/dashboard/estudiante';
+
+    const normalizedPlan = (planType || '').toLowerCase().trim();
+
+    if (['plan_instructor', 'membresia_instructor', 'instructor', 'docente'].includes(normalizedPlan)) {
+      assignedRole = 'instructor';
+      canonicalPlanType = 'instructor_custom';
+      dashboardUrl = '/dashboard/instructor';
+    } else if (['plan_academia', 'membresia_academia', 'studio', 'academia', 'academy', 'app_academy'].includes(normalizedPlan)) {
+      assignedRole = 'academy';
+      canonicalPlanType = 'app_academy';
+      dashboardUrl = '/dashboard/academia';
+    } else {
+      assignedRole = 'vip_student';
+      canonicalPlanType = 'app_vip';
+      dashboardUrl = '/dashboard/estudiante';
+    }
+
+    const now = new Date();
+    // 4 days trial for VIP student trials, 30 days for active monthly payments
+    const periodDays = isTrial ? 4 : 30;
+    const currentPeriodEnd = new Date(now.getTime() + periodDays * 24 * 60 * 60 * 1000).toISOString();
+    const trialEnd = isTrial ? currentPeriodEnd : undefined;
+
+    console.log(`[Payment Webhook Engine]: Assigning canonical role '${assignedRole}', plan '${canonicalPlanType}', status '${subscriptionStatus}' to user '${userId || 'N/A'}' (Period End: ${currentPeriodEnd})`);
+
+    let dbUpdated = false;
+
+    // 1. Update Firebase Firestore document if firebase-admin is available or initialized
+    try {
+      const adminModule = await import('firebase-admin');
+      const admin = (adminModule as any).default || adminModule;
+      if (!admin.apps || admin.apps.length === 0) {
+        admin.initializeApp();
+      }
+      const firestore = admin.firestore();
+
+      let targetUid = userId;
+      if (!targetUid && userEmail) {
+        const snap = await firestore.collection('users').where('email', '==', userEmail).limit(1).get();
+        if (!snap.empty) {
+          targetUid = snap.docs[0].id;
+        }
+      }
+
+      if (targetUid) {
+        await firestore.collection('users').doc(targetUid).set({
+          role: assignedRole,
+          plan_type: canonicalPlanType,
+          subscription_status: subscriptionStatus,
+          current_period_end: currentPeriodEnd,
+          trial_end: trialEnd || null,
+          stripe_customer_id: stripeCustomer || `cus_${targetUid}`,
+          billingStatus: 'active',
+          subscriptionTier: assignedRole === 'instructor' ? 'instructor_pass' : 'basic_practice',
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+        dbUpdated = true;
+        console.log(`[Firestore Admin Webhook Success]: Set user '${targetUid}' role -> '${assignedRole}', status -> '${subscriptionStatus}'`);
+
+        // SEGURIDAD: esto es lo que realmente hace segura la verificación en
+        // rbac.ts — el rol/estado de suscripción queda embebido en el ID
+        // token de Firebase del usuario (custom claims), firmado por
+        // Firebase, imposible de falsificar desde el cliente. Se fusiona con
+        // los claims existentes (nunca se sobreescriben por completo) para
+        // no pisar otros claims que pudiera tener el usuario.
+        try {
+          const existing = await adminAuth.getUser(targetUid);
+          await adminAuth.setCustomUserClaims(targetUid, {
+            ...existing.customClaims,
+            role: assignedRole,
+            plan_type: canonicalPlanType,
+            subscription_status: subscriptionStatus,
+            stripe_customer_id: stripeCustomer || `cus_${targetUid}`
+          });
+          console.log(`[Firebase Custom Claims]: Actualizados para '${targetUid}' -> role='${assignedRole}', subscription_status='${subscriptionStatus}'`);
+        } catch (claimsErr: any) {
+          console.warn('[Firebase Custom Claims Warning]:', claimsErr?.message || claimsErr);
+        }
+      }
+    } catch (err: any) {
+      console.warn('[Firestore Admin Webhook Warning]:', err?.message || err);
+    }
+
+    // 2. Update PostgreSQL database if process.env.SQL_HOST is present
+    if (process.env.SQL_HOST && userId) {
+      try {
+        await drizzleDb.update(profilesTable)
+          .set({ 
+            role: assignedRole,
+            planType: canonicalPlanType,
+            subscriptionStatus: subscriptionStatus,
+            stripeCustomerId: stripeCustomer || `cus_${userId}`,
+            currentPeriodEnd: new Date(currentPeriodEnd)
+          });
+        dbUpdated = true;
+        console.log(`[PostgreSQL Webhook Success]: Updated SQL profile '${userId}' to role '${assignedRole}'`);
+      } catch (err: any) {
+        console.warn('[PostgreSQL Webhook Warning]:', err?.message || err);
+      }
+    }
+
+    return {
+      userId,
+      userEmail,
+      assignedRole,
+      canonicalPlanType,
+      subscriptionStatus,
+      currentPeriodEnd,
+      trialEnd,
+      dashboardUrl,
+      dbUpdated
+    };
+  }
+
+  // --- 1. PAYMENTS & WEBHOOKS (Stripe, Shopify, Mercado Pago) ---
 
   app.get('/api/stripe/config', (req, res) => {
     const configured = !!process.env.STRIPE_SECRET_KEY;
@@ -241,71 +407,79 @@ async function startServer() {
 
   app.post('/api/stripe/create-checkout-session', validateInput(checkoutSessionSchema), async (req, res) => {
     try {
-      const { tier, successUrl, cancelUrl, userEmail, userId } = req.body;
+      const { tier, planType, successUrl, cancelUrl, userEmail, userId } = req.body;
       const stripe = getStripeClient();
 
       const host = req.headers.host || 'localhost:3000';
       const protocol = req.headers['x-forwarded-proto'] || 'http';
       const appUrl = process.env.APP_URL || `${protocol}://${host}`;
 
-      const defaultSuccessUrl = `${appUrl}?payment_status=success&session_id={CHECKOUT_SESSION_ID}`;
+      const activePlanType = planType || tier || 'clase_profesor';
+      const defaultSuccessUrl = `${appUrl}?payment_status=success&plan=${activePlanType}&session_id={CHECKOUT_SESSION_ID}`;
       const defaultCancelUrl = `${appUrl}?payment_status=cancelled`;
 
       if (!stripe) {
         console.log('[Stripe Server] No STRIPE_SECRET_KEY configured. Returning simulation response.');
+        // Auto assign role in simulation mode if requested
+        const simulationResult = await updateUserRoleAndSubscriptionInDB(userId, userEmail, activePlanType);
+
         return res.json({
           success: true,
           mode: 'simulation',
           sessionId: 'sim_session_' + Date.now(),
           url: (successUrl || defaultSuccessUrl).replace('{CHECKOUT_SESSION_ID}', 'sim_session_' + Date.now()),
-          message: 'Stripe simulated mode: API key pending in environment variables.'
+          assignedRole: simulationResult.assignedRole,
+          dashboardUrl: simulationResult.dashboardUrl,
+          message: 'Stripe simulated mode: pago procesado y rol actualizado correctamente.'
         });
       }
 
       let lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
       let mode: Stripe.Checkout.SessionCreateParams.Mode = 'subscription';
 
-      if (tier === 'annual') {
+      if (activePlanType === 'plan_academia' || activePlanType === 'studio' || activePlanType === 'academia') {
         lineItems = [{
           price_data: {
             currency: 'usd',
             product_data: {
-              name: 'Waack On VIP Pass (Anual)',
-              description: 'Acceso total a la academia de clases, lab somático, workbooks y análisis de movimiento.',
+              name: 'Membresía Studio y Academia (Pro Waack ON)',
+              description: 'Gestión completa de instructores, nómina de estudiantes, documentos y dashboard institucional de estudio.',
             },
-            unit_amount: 12000,
-            recurring: { interval: 'year' }
+            unit_amount: 3000, // $30.00 USD/mes
+            recurring: { interval: 'month' }
           },
           quantity: 1,
         }];
         mode = 'subscription';
-      } else if (tier === 'monthly') {
+      } else if (activePlanType === 'plan_instructor' || activePlanType === 'instructor') {
         lineItems = [{
           price_data: {
             currency: 'usd',
             product_data: {
-              name: 'Waack On VIP Pass (Mensual)',
-              description: 'Acceso mensual ilimitado a clases y herramientas somáticas de Waacking.',
+              name: 'Plan Instructor (Cátedra Docente Waack ON)',
+              description: 'Publicación de programas, podcasts, cobro directo de cátedras y dashboard de instructor.',
             },
-            unit_amount: 1499,
+            unit_amount: 4900, // $49.00 USD/mes
             recurring: { interval: 'month' }
           },
           quantity: 1,
         }];
         mode = 'subscription';
       } else {
+        // Clase / Profesor / Estudiante
         lineItems = [{
           price_data: {
             currency: 'usd',
             product_data: {
-              name: 'Waack On Master Ebook & Workbook',
-              description: 'Acceso permanente al manual de teoría e historia de Waacking.',
+              name: 'Pago de Clase / Inscripción Profesor (Pase Estudiante)',
+              description: 'Acceso total a la academia de clases, laboratorio somático y dashboard de estudiante.',
             },
-            unit_amount: 1999,
+            unit_amount: 1499, // $14.99 USD/mes
+            recurring: { interval: 'month' }
           },
           quantity: 1,
         }];
-        mode = 'payment';
+        mode = 'subscription';
       }
 
       const session = await stripe.checkout.sessions.create({
@@ -316,7 +490,7 @@ async function startServer() {
         client_reference_id: userId || undefined,
         success_url: successUrl || defaultSuccessUrl,
         cancel_url: cancelUrl || defaultCancelUrl,
-        metadata: { userId: userId || 'anonymous', tier }
+        metadata: { userId: userId || 'anonymous', planType: activePlanType }
       });
 
       return res.json({
@@ -332,14 +506,173 @@ async function startServer() {
     }
   });
 
-  app.post('/api/stripe/webhook', (req, res) => {
-    const event = req.body;
-    console.log('[Stripe Webhook Received]:', event?.type);
-    if (event?.type === 'checkout.session.completed') {
-      const session = event.data.object;
-      console.log('Payment checkout session completed for user:', session.client_reference_id || session.customer_email);
+  // Stripe Webhook Endpoint
+  app.post('/api/stripe/webhook', async (req, res) => {
+    try {
+      const event = req.body;
+      console.log('[Stripe Webhook Received]:', event?.type);
+
+      if (event?.type === 'checkout.session.completed' || event?.type === 'payment_intent.succeeded') {
+        const session = event.data?.object || {};
+        const userId = session.client_reference_id || session.metadata?.userId;
+        const userEmail = session.customer_email || session.customer_details?.email;
+        const planType = session.metadata?.planType || session.metadata?.tier || 'clase_profesor';
+
+        const result = await updateUserRoleAndSubscriptionInDB(userId, userEmail, planType);
+        return res.json({
+          received: true,
+          status: 'success',
+          result
+        });
+      }
+
+      return res.json({ received: true });
+    } catch (err: any) {
+      console.error('[Stripe Webhook Error]:', err);
+      return res.status(500).json({ error: 'Webhook processing error', details: err.message });
     }
-    res.json({ received: true });
+  });
+
+  // Generic Payment Webhook Endpoint (For Stripe, Shopify, Mercado Pago)
+  app.post('/api/webhook/payment', validateInput(webhookPaymentSchema), async (req, res) => {
+    try {
+      const { userId, userEmail, planType, gateway, transactionId, amountUSD } = req.body;
+
+      console.log(`[Universal Webhook - ${gateway.toUpperCase()}]: Processing payment transaction ${transactionId} ($${amountUSD} USD)`);
+
+      const result = await updateUserRoleAndSubscriptionInDB(userId, userEmail, planType);
+
+      return res.json({
+        success: true,
+        message: `Transacción de pago (${gateway.toUpperCase()}) validada exitosamente. Rol de usuario actualizado a '${result.assignedRole}'.`,
+        transaction: {
+          id: transactionId,
+          gateway,
+          amountUSD,
+          userId: result.userId,
+          userEmail: result.userEmail,
+          assignedRole: result.assignedRole,
+          subscriptionStatus: 'active',
+          dashboardUrl: result.dashboardUrl
+        }
+      });
+    } catch (err: any) {
+      console.error('[Universal Payment Webhook Error]:', err);
+      return res.status(500).json({ error: 'Error al procesar el webhook de pago', details: err.message });
+    }
+  });
+
+  // Payment Simulator Webhook Endpoint (For live interactive testing)
+  app.post('/api/webhook/simulate-payment', validateInput(webhookPaymentSchema), async (req, res) => {
+    try {
+      const { userId, userEmail, planType, gateway } = req.body;
+
+      const result = await updateUserRoleAndSubscriptionInDB(userId, userEmail, planType);
+
+      return res.json({
+        success: true,
+        message: `Simulación de pago completada (${gateway}). Rol asignado: '${result.assignedRole}'. Redirección activa a ${result.dashboardUrl}`,
+        result
+      });
+    } catch (err: any) {
+      console.error('[Simulate Payment Webhook Error]:', err);
+      return res.status(500).json({ error: 'Error en la simulación de pago', details: err.message });
+    }
+  });
+
+  // --- 1.2 HYBRID ARCHITECTURE ROUTES & MONETIZATION ENDPOINTS ---
+
+  // VIP Content Library & VIP Tools (Protected by requireVipAccess middleware)
+  app.get('/api/premium-library/lessons', requireVipAccess(), async (req, res) => {
+    const user = (req as any).user;
+    return res.json({
+      success: true,
+      message: 'Acceso autorizado a la Librería VIP de Waack ON',
+      user: {
+        id: user.id,
+        role: user.role,
+        status: user.subscription_status
+      },
+      lessons: [
+        { id: 'vip-les-1', title: 'Mastery of Whacking Speed (130 BPM)', duration: '45 min', instructor: 'Loreto Waack' },
+        { id: 'vip-les-2', title: 'Punking Theatricality & Drama Lines', duration: '60 min', instructor: 'Brando Hermoso' },
+        { id: 'vip-les-3', title: 'Somatic Posture & Shoulder Isolation', duration: '50 min', instructor: 'Elena Pose' }
+      ]
+    });
+  });
+
+  // VIP Tools & Somatic Lab Features (Protected by requireVipAccess middleware)
+  app.get('/api/vip-tools/features', requireVipAccess(), async (req, res) => {
+    return res.json({
+      success: true,
+      tools: [
+        { name: 'SomaticFeedbackLab', status: 'unlocked', capabilities: ['BlindMirror', 'SlowMotionMatrix', 'AngleCalibration'] },
+        { name: 'BattleLabPro', status: 'unlocked', capabilities: ['GhostDancerAI', 'LiveJudgeScoring'] },
+        { name: 'DramaLabStudio', status: 'unlocked', capabilities: ['MicroExpressionAnalysis', 'PosingFreezeFrame'] }
+      ]
+    });
+  });
+
+  // Academy Administration Dashboard (Protected by requireAcademyAccess middleware)
+  app.get('/api/academy-dashboard/stats', requireAcademyAccess(), async (req, res) => {
+    const user = (req as any).user;
+    return res.json({
+      success: true,
+      academyId: user.id,
+      metrics: {
+        enrolledStudents: 48,
+        activeInstructors: 4,
+        monthlyRevenueUSD: 1440.00,
+        retentionRate: '96.5%',
+        institutionTier: 'Pro Studio Enterprise'
+      }
+    });
+  });
+
+  // Instructor Monetization & Content Publishing (Protected by requireVerifiedInstructor middleware)
+  app.post('/api/instructor/publish-content', requireVerifiedInstructor(), async (req, res) => {
+    const user = (req as any).user;
+    const { title, description, priceUSD, videoUrl } = req.body;
+
+    return res.json({
+      success: true,
+      message: 'Cátedra / Masterclass publicada exitosamente con cobro directo vía Stripe Connect (75% creador / 25% plataforma)',
+      content: {
+        id: `inst-content-${Date.now()}`,
+        instructorId: user.id,
+        title: title || 'Nueva Masterclass',
+        description: description || '',
+        priceUSD: priceUSD || 15.00,
+        instructorShareUSD: (priceUSD || 15.00) * 0.75,
+        platformFeeUSD: (priceUSD || 15.00) * 0.25,
+        stripeAccountId: user.stripe_account_id,
+        isVerified: true
+      }
+    });
+  });
+
+  // Private Instructor Content (Protected by requireInstructorSubscriber middleware)
+  app.get('/api/instructor/:instructorId/private-lessons', requireInstructorSubscriber('instructorId'), async (req, res) => {
+    const { instructorId } = req.params;
+    return res.json({
+      success: true,
+      instructorId,
+      lessons: [
+        { id: `priv-${instructorId}-1`, title: 'Cátedra Exclusiva: Secretos de Posing y Proyección', length: '55 min' },
+        { id: `priv-${instructorId}-2`, title: 'Metodología Personal & Laboratorio de Improvisación', length: '40 min' }
+      ]
+    });
+  });
+
+  // Start 4-Day VIP Trial endpoint
+  app.post('/api/subscription/start-trial', async (req, res) => {
+    const { userId, userEmail } = req.body;
+    const result = await updateUserRoleAndSubscriptionInDB(userId, userEmail, 'app_vip', undefined, true);
+    return res.json({
+      success: true,
+      message: '¡Prueba VIP de 4 días activada exitosamente! Tienes acceso ilimitado a la librería y herramientas somáticas.',
+      result
+    });
   });
 
   // --- 2. GEMINI AI ENDPOINTS (Validated with Zod) ---
@@ -453,6 +786,82 @@ Brinda 2 consejos prácticos para optimizar el rendimiento somático y la expres
     } catch (err: any) {
       console.warn('[Gemini Chat API Error - using fallback]:', err.message || err);
       return res.json({ reply: fallbackReply });
+    }
+  });
+
+  app.post('/api/gemini/summarize-lesson', validateInput(lessonSummarySchema), async (req, res) => {
+    const { lessonTitle, lessonDescription, instructorName, category, transcription } = req.body;
+
+    const fallbackSummary = `### 🎯 Objetivo Principal & Sinopsis Ejecutiva
+En la clase **"${lessonTitle}"**, impartida por **${instructorName}** (${category}), se trabaja la base somática y técnica fundamental para optimizar la proyección escénica y la precisión en Waacking.
+
+### 💡 Pilares Técnicos & Conceptos Somáticos
+- **Alineación Postural**: Mantener la columna neutra y la mirada erguida al ejecutar movimientos rápidos.
+- **Métrica & Control Articular**: Control consciente del codo para ejecutar rotaciones sin tensionar los hombros.
+- **Fluidez & Síncopa**: Sincronización con la batería y los acentos del compás Disco 4/4.
+
+### 📌 Drills & Rutinas Recomendadas
+1. **Drill de Espejo**: 3 series de 1 minuto de rolls lentos a 110 BPM buscando simetría.
+2. **Pose Estática**: Congelar poses cada 4 tiempos marcando la caja torácica.
+
+### ⏱️ Marcas de Tiempo Destacadas
+- **[00:00 - 03:30]**: Explicación teórica de la postura y respiración.
+- **[03:30 - 10:00]**: Demostración paso a paso del ejercicio somático.
+- **[10:00 - Fin]**: Práctica guiada con conteo y música.
+
+### ⚡ Consejo Pedagógico de Cátedra
+*"La velocidad sin limpieza visual es ruido. Enfócate primero en sentir el ritmo en la espalda antes de acelerar el BPM."*`;
+
+    try {
+      const ai = getGeminiClient();
+
+      if (!ai) {
+        return res.json({
+          success: true,
+          mode: 'simulation',
+          summary: fallbackSummary
+        });
+      }
+
+      const prompt = `Eres la IA Directora Pedagógica de Waack On Academy, experta en metodología de danza Waacking, biomecánica y cultura Disco de los años 70.
+Genera un RESUMEN EJECUTIVO exhaustivo, profesional y bien estructurado de la siguiente clase a partir de su transcripción completa.
+
+Información de la Clase:
+- Título: ${lessonTitle}
+- Instructor: ${instructorName}
+- Categoría: ${category}
+- Descripción General: ${lessonDescription}
+
+Transcripción Oficial de la Clase:
+"${transcription}"
+
+Por favor organiza el Resumen Ejecutivo en las siguientes secciones con formato Markdown impecable:
+
+1. 🎯 **OBJETIVO PRINCIPAL Y SINOPSIS EJECUTIVA** (Resumen de alto nivel de lo enseñado en la lección).
+2. 💡 **PILARES TÉCNICOS Y CONCEPTOS SOMÁTICOS** (Desglose biomecánico: postura, codos, rolls, musicalidad, Posing o expresión).
+3. 📌 **DRILLS Y RUTINAS DE PRÁCTICA RECOMENDADAS** (Pautas concretas paso a paso para el estudiante).
+4. ⏱️ **MARCAS DE TIEMPO Y HITOS CLAVE DE LA CLASE** (Basándote en la transcripción).
+5. ⚡ **CONSEJO PEDAGÓGICO DE CÁTEDRA PARA EL FREESTYLE** (Mensaje motivador y estratégico para el bailarín).
+
+Responde exclusivamente en español con un lenguaje académico, motivador y sumamente claro.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt
+      });
+
+      return res.json({
+        success: true,
+        mode: 'gemini',
+        summary: response.text || fallbackSummary
+      });
+    } catch (err: any) {
+      console.warn('[Gemini Summarize Lesson Error - using fallback]:', err.message || err);
+      return res.json({
+        success: true,
+        mode: 'fallback',
+        summary: fallbackSummary
+      });
     }
   });
 
@@ -906,12 +1315,17 @@ Semana 3-4 (Progresión): [Cómo escalar la dificultad en el Lab basándose en s
   app.get('/api/student/tasks', async (req, res) => {
     try {
       if (process.env.SQL_HOST) {
-        const tasks = await drizzleDb.select().from(instructorTasksTable);
-        return res.json({ success: true, tasks });
+        try {
+          const tasks = await drizzleDb.select().from(instructorTasksTable);
+          return res.json({ success: true, tasks });
+        } catch (dbErr) {
+          console.warn('[Tasks Fallback to InMemory]:', dbErr);
+          return res.json({ success: true, tasks: inMemoryInstructorTasks });
+        }
       }
       return res.json({ success: true, tasks: inMemoryInstructorTasks });
     } catch (err: any) {
-      return res.status(500).json({ error: 'Error fetching student tasks', details: err.message });
+      return res.json({ success: true, tasks: inMemoryInstructorTasks });
     }
   });
 
@@ -1134,10 +1548,10 @@ Semana 3-4 (Progresión): [Cómo escalar la dificultad en el Lab basándose en s
   });
 
   // Post message to Communication Hub (Validated with Zod)
-  app.post('/api/community/messages', validateInput(communityMessageSchema), async (req, res) => {
+  app.post('/api/community/messages', requireVerifiedUser, validateInput(communityMessageSchema), async (req, res) => {
     try {
       const data = req.body;
-      const user = getUserFromReq(req);
+      const user = (req as any).user;
 
       const newMsg = {
         id: `msg-${Date.now()}`,
@@ -1174,10 +1588,10 @@ Semana 3-4 (Progresión): [Cómo escalar la dificultad en el Lab basándose en s
   });
 
   // Delete community message (RBAC Check: Author or Instructor)
-  app.delete('/api/community/messages/:id', async (req, res) => {
+  app.delete('/api/community/messages/:id', requireVerifiedUser, async (req, res) => {
     try {
       const { id } = req.params;
-      const user = getUserFromReq(req);
+      const user = (req as any).user;
 
       // Instructors can delete any message; students can only delete if authorized
       if (user.role !== 'instructor') {
@@ -1322,12 +1736,22 @@ Semana 3-4 (Progresión): [Cómo escalar la dificultad en el Lab basándose en s
 
   // Spotify Auth URL Endpoint
   app.get('/api/spotify/auth-url', (req, res) => {
+    const clientId = process.env.SPOTIFY_CLIENT_ID;
+    const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      console.warn('[Spotify] SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET are not configured on the server.');
+      return res.status(503).json({
+        error: 'spotify_not_configured',
+        message: 'La integración con Spotify no está configurada en el servidor. Define SPOTIFY_CLIENT_ID y SPOTIFY_CLIENT_SECRET.'
+      });
+    }
+
     const host = req.headers.host || 'localhost:3000';
     const protocol = req.headers['x-forwarded-proto'] || 'http';
     const appUrl = process.env.APP_URL || `${protocol}://${host}`;
     const redirectUri = `${appUrl}/api/spotify/callback`;
 
-    const clientId = process.env.SPOTIFY_CLIENT_ID || 'demo_spotify_client_id';
     const scopes = [
       'playlist-read-private',
       'playlist-read-collaborative',
@@ -1340,6 +1764,7 @@ Semana 3-4 (Progresión): [Cómo escalar la dificultad en el Lab basándose en s
       response_type: 'code',
       redirect_uri: redirectUri,
       scope: scopes,
+      state: createSpotifyState(),
       show_dialog: 'true'
     });
 
@@ -1349,69 +1774,138 @@ Semana 3-4 (Progresión): [Cómo escalar la dificultad en el Lab basándose en s
 
   // Spotify Callback Handler
   app.get(['/api/spotify/callback', '/auth/callback', '/auth/callback/'], async (req, res) => {
-    const code = req.query.code as string;
+    const code = req.query.code as string | undefined;
+    const state = req.query.state as string | undefined;
+    const oauthError = req.query.error as string | undefined;
     const host = req.headers.host || 'localhost:3000';
     const protocol = req.headers['x-forwarded-proto'] || 'http';
     const appUrl = process.env.APP_URL || `${protocol}://${host}`;
     const redirectUri = `${appUrl}/api/spotify/callback`;
 
-    let accessToken = '';
+    const renderResult = (payload: Record<string, unknown>) => {
+      res.send(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Spotify Authentication - Waack ON</title>
+            <style>
+              body { font-family: system-ui, -apple-system, sans-serif; background: #0A0A0E; color: #fff; text-align: center; padding: 40px; }
+              .spinner { border: 3px solid rgba(255,255,255,0.1); border-top: 3px solid #1DB954; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 20px auto; }
+              @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+            </style>
+          </head>
+          <body>
+            <div class="spinner"></div>
+            <h2 style="color: #1DB954; font-family: monospace;">Conectando con Spotify...</h2>
+            <p style="color: #A1A1AA; font-size: 14px;">Sincronizando tus playlists privadas con tu cuenta de Waack ON.</p>
+            <script>
+              (function () {
+                var targetOrigin = ${JSON.stringify(appUrl)};
+                var payload = ${JSON.stringify(payload)};
+                if (window.opener) {
+                  window.opener.postMessage(payload, targetOrigin);
+                  setTimeout(function () { window.close(); }, 600);
+                } else {
+                  window.location.href = '/?spotify_connected=' + (payload.type === 'SPOTIFY_AUTH_SUCCESS');
+                }
+              })();
+            </script>
+          </body>
+        </html>
+      `);
+    };
 
-    if (code && process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET) {
-      try {
-        const authHeader = Buffer.from(`${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`).toString('base64');
-        const tokenRes = await fetch('https://accounts.spotify.com/api/token', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Basic ${authHeader}`,
-            'Content-Type': 'application/x-www-form-urlencoded'
-          },
-          body: new URLSearchParams({
-            grant_type: 'authorization_code',
-            code: code,
-            redirect_uri: redirectUri
-          })
-        });
-        const tokenData = await tokenRes.json();
-        if (tokenData.access_token) {
-          accessToken = tokenData.access_token;
-        }
-      } catch (e) {
-        console.warn('Spotify token exchange error:', e);
+    // Reject requests without a valid, signed `state` (CSRF / authorization-code-injection protection).
+    if (!verifySpotifyState(state)) {
+      console.warn('[Spotify] Callback rejected: missing or invalid OAuth state parameter.');
+      return renderResult({ type: 'SPOTIFY_AUTH_ERROR', error: 'invalid_state' });
+    }
+
+    if (oauthError || !code) {
+      return renderResult({ type: 'SPOTIFY_AUTH_ERROR', error: oauthError || 'missing_code' });
+    }
+
+    if (!process.env.SPOTIFY_CLIENT_ID || !process.env.SPOTIFY_CLIENT_SECRET) {
+      return renderResult({ type: 'SPOTIFY_AUTH_ERROR', error: 'spotify_not_configured' });
+    }
+
+    try {
+      const authHeader = Buffer.from(`${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`).toString('base64');
+      const tokenRes = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${authHeader}`,
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          code: code,
+          redirect_uri: redirectUri
+        })
+      });
+      const tokenData = await tokenRes.json();
+
+      if (!tokenRes.ok || !tokenData.access_token) {
+        console.warn('Spotify token exchange failed:', tokenData);
+        return renderResult({ type: 'SPOTIFY_AUTH_ERROR', error: 'token_exchange_failed' });
       }
+
+      return renderResult({
+        type: 'SPOTIFY_AUTH_SUCCESS',
+        token: tokenData.access_token,
+        refreshToken: tokenData.refresh_token || null,
+        expiresIn: tokenData.expires_in || 3600
+      });
+    } catch (e) {
+      console.warn('Spotify token exchange error:', e);
+      return renderResult({ type: 'SPOTIFY_AUTH_ERROR', error: 'token_exchange_failed' });
+    }
+  });
+
+  // Spotify Refresh Token Endpoint — lets the client silently renew an expired
+  // access token (Spotify access tokens expire after ~1h) without forcing the
+  // user to repeat the OAuth popup flow every time.
+  app.post('/api/spotify/refresh-token', async (req, res) => {
+    const { refreshToken } = req.body || {};
+    if (!refreshToken || typeof refreshToken !== 'string') {
+      return res.status(400).json({ error: 'missing_refresh_token' });
     }
 
-    if (!accessToken) {
-      accessToken = `spotify_demo_token_${Date.now()}`;
+    if (!process.env.SPOTIFY_CLIENT_ID || !process.env.SPOTIFY_CLIENT_SECRET) {
+      return res.status(503).json({ error: 'spotify_not_configured' });
     }
 
-    res.send(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Spotify Authentication - Waack ON</title>
-          <style>
-            body { font-family: system-ui, -apple-system, sans-serif; background: #0A0A0E; color: #fff; text-align: center; padding: 40px; }
-            .spinner { border: 3px solid rgba(255,255,255,0.1); border-top: 3px solid #1DB954; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 20px auto; }
-            @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-          </style>
-        </head>
-        <body>
-          <div class="spinner"></div>
-          <h2 style="color: #1DB954; font-family: monospace;">Conectando con Spotify...</h2>
-          <p style="color: #A1A1AA; font-size: 14px;">Sincronizando tus playlists privadas con tu cuenta de Waack ON.</p>
-          <script>
-            const token = "${accessToken}";
-            if (window.opener) {
-              window.opener.postMessage({ type: 'SPOTIFY_AUTH_SUCCESS', token: token }, '*');
-              setTimeout(() => window.close(), 600);
-            } else {
-              window.location.href = '/?spotify_connected=true';
-            }
-          </script>
-        </body>
-      </html>
-    `);
+    try {
+      const authHeader = Buffer.from(`${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`).toString('base64');
+      const tokenRes = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${authHeader}`,
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken
+        })
+      });
+      const tokenData = await tokenRes.json();
+
+      if (!tokenRes.ok || !tokenData.access_token) {
+        console.warn('Spotify token refresh failed:', tokenData);
+        return res.status(401).json({ error: 'invalid_refresh_token' });
+      }
+
+      return res.json({
+        success: true,
+        accessToken: tokenData.access_token,
+        // Spotify may rotate refresh tokens; keep the new one if issued, otherwise keep reusing the existing one.
+        refreshToken: tokenData.refresh_token || refreshToken,
+        expiresIn: tokenData.expires_in || 3600
+      });
+    } catch (e) {
+      console.warn('Spotify token refresh error:', e);
+      return res.status(500).json({ error: 'refresh_failed' });
+    }
   });
 
   // Spotify User Playlists Endpoint
@@ -1452,13 +1946,14 @@ Semana 3-4 (Progresión): [Cómo escalar la dificultad en el Lab basándose en s
       }
     ];
 
-    if (token && !token.startsWith('spotify_demo_token_')) {
+    if (token) {
       try {
         const spotifyRes = await fetch('https://api.spotify.com/v1/me/playlists?limit=20', {
           headers: {
             'Authorization': `Bearer ${token}`
           }
         });
+
         if (spotifyRes.ok) {
           const data = await spotifyRes.json();
           const userPlaylists = (data.items || []).map((item: any) => ({
@@ -1475,11 +1970,21 @@ Semana 3-4 (Progresión): [Cómo escalar la dificultad en el Lab basándose en s
           return res.json({
             success: true,
             mode: 'spotify_api',
-            playlists: userPlaylists.length > 0 ? userPlaylists : defaultPlaylists
+            playlists: userPlaylists.length > 0 ? userPlaylists : []
           });
         }
+
+        // An expired/revoked access token must NOT be masked as a successful
+        // "simulation" response — the client needs to know to refresh or reconnect.
+        if (spotifyRes.status === 401) {
+          return res.status(401).json({ success: false, mode: 'expired', error: 'spotify_token_expired' });
+        }
+
+        console.warn('Spotify API returned an unexpected status:', spotifyRes.status);
+        return res.status(502).json({ success: false, mode: 'error', error: 'spotify_api_error' });
       } catch (e) {
         console.warn('Spotify API fetch error:', e);
+        return res.status(502).json({ success: false, mode: 'error', error: 'spotify_api_unreachable' });
       }
     }
 

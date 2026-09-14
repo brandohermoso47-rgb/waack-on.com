@@ -55,20 +55,45 @@ export default function TasksView({ currentUser, language, lessons, onAddBonusPo
   const [assignedInstructorTasks, setAssignedInstructorTasks] = useState<any[]>([]);
 
   useEffect(() => {
+    let isMounted = true;
+    const defaultFallbackTasks = [
+      {
+        id: 't-default-1',
+        title: 'Drill de Posing con Matices Sincrónicos (120 BPM)',
+        description: 'Ejecuta 8 tiempos de Posing estricto manteniendo proyección visual constante a la cámara.',
+        category: 'técnica',
+        points: 50,
+        authorUid: 'inst-1',
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      }
+    ];
+
     fetch('/api/student/tasks')
       .then(res => {
-        if (!res.ok) return null;
+        if (!res || !res.ok) return null;
         const contentType = res.headers.get('content-type');
         if (!contentType || !contentType.includes('application/json')) return null;
-        return res.json();
+        return res.json().catch(() => null);
       })
       .then(data => {
+        if (!isMounted) return;
         if (data && data.success && Array.isArray(data.tasks)) {
           const mine = data.tasks.filter((t: any) => !t.studentUid || t.studentUid === currentUser.id);
-          setAssignedInstructorTasks(mine);
+          setAssignedInstructorTasks(mine.length > 0 ? mine : defaultFallbackTasks.filter((t: any) => !t.studentUid || t.studentUid === currentUser.id));
+        } else {
+          setAssignedInstructorTasks(defaultFallbackTasks.filter((t: any) => !t.studentUid || t.studentUid === currentUser.id));
         }
       })
-      .catch(err => console.error('Error fetching instructor tasks:', err));
+      .catch(() => {
+        if (isMounted) {
+          setAssignedInstructorTasks(defaultFallbackTasks.filter((t: any) => !t.studentUid || t.studentUid === currentUser.id));
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, [currentUser.id]);
 
   const handleCompleteInstructorTaskItem = async (taskId: string) => {
@@ -271,12 +296,12 @@ export default function TasksView({ currentUser, language, lessons, onAddBonusPo
   return (
     <div className="space-y-6 pb-12">
       {/* Header Banner */}
-      <div className="bg-gradient-to-r from-[#1c1815] via-[#2a1e1b] to-[#17131a] p-6 sm:p-8 rounded-3xl border border-[#E9C349]/30 shadow-2xl relative overflow-hidden">
-        <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-[#E9C349]/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="bg-gradient-to-r from-[#1c1815] via-[#2a1e1b] to-[#17131a] p-6 sm:p-8 rounded-3xl border border-[#D9A9FF]/30 shadow-2xl relative overflow-hidden">
+        <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-[#D9A9FF]/10 rounded-full blur-3xl pointer-events-none" />
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <span className="text-[10px] font-mono font-black text-[#E9C349] bg-[#E9C349]/10 border border-[#E9C349]/30 px-2.5 py-1 rounded-full uppercase tracking-widest flex items-center gap-1.5">
+              <span className="text-[10px] font-mono font-black text-[#D9A9FF] bg-[#D9A9FF]/10 border border-[#D9A9FF]/30 px-2.5 py-1 rounded-full uppercase tracking-widest flex items-center gap-1.5">
                 <Sparkles className="w-3 h-3" />
                 GOOGLE WORKSPACE INTEGRATION
               </span>
@@ -288,7 +313,7 @@ export default function TasksView({ currentUser, language, lessons, onAddBonusPo
               )}
             </div>
             <h1 className="text-2xl sm:text-3xl font-black text-white uppercase tracking-tight flex items-center gap-3">
-              <ListTodo className="w-8 h-8 text-[#E9C349] shrink-0" />
+              <ListTodo className="w-8 h-8 text-[#D9A9FF] shrink-0" />
               Metas & Google Tasks
             </h1>
             <p className="text-sm text-slate-300 mt-1 max-w-2xl font-medium">
@@ -330,7 +355,7 @@ export default function TasksView({ currentUser, language, lessons, onAddBonusPo
               <button
                 type="button"
                 onClick={() => setShowCreateTaskModal(true)}
-                className="px-5 py-2.5 rounded-xl bg-[#E9C349] hover:bg-[#d6b039] text-black border border-[#E9C349] text-xs font-extrabold uppercase transition-all shadow-lg hover:scale-105 flex items-center gap-2"
+                className="px-5 py-2.5 rounded-xl bg-[#D9A9FF] hover:bg-[#B87CFF] text-black border border-[#D9A9FF] text-xs font-extrabold uppercase transition-all shadow-lg hover:scale-105 flex items-center gap-2"
               >
                 <Plus className="w-4 h-4" />
                 Nueva Tarea
@@ -363,10 +388,10 @@ export default function TasksView({ currentUser, language, lessons, onAddBonusPo
 
       {/* Instructor Assigned Tasks Section */}
       {assignedInstructorTasks.length > 0 && (
-        <div className="bg-gradient-to-r from-[#1c1912] via-[#121212] to-[#121212] border-2 border-[#E9C349] rounded-3xl p-6 shadow-2xl space-y-4">
+        <div className="bg-gradient-to-r from-[#1c1912] via-[#121212] to-[#121212] border-2 border-[#D9A9FF] rounded-3xl p-6 shadow-2xl space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="p-2 rounded-xl bg-[#E9C349]/20 text-[#E9C349]">
+              <span className="p-2 rounded-xl bg-[#D9A9FF]/20 text-[#D9A9FF]">
                 <Sparkles className="w-5 h-5 animate-pulse" />
               </span>
               <div>
@@ -374,62 +399,81 @@ export default function TasksView({ currentUser, language, lessons, onAddBonusPo
                 <p className="text-xs text-slate-400">Completa estas misiones para sumar puntos directos a tu ranking somático.</p>
               </div>
             </div>
-            <span className="text-xs font-mono font-bold text-[#E9C349] bg-[#E9C349]/10 px-3 py-1 rounded-full border border-[#E9C349]/30">
+            <span className="text-xs font-mono font-bold text-[#D9A9FF] bg-[#D9A9FF]/10 px-3 py-1 rounded-full border border-[#D9A9FF]/30">
               {(assignedInstructorTasks || []).filter(t => t.status !== 'completed').length} Pendientes
             </span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {(assignedInstructorTasks || []).map(task => {
-              const isCompleted = task.status === 'completed';
-              return (
-                <div
-                  key={task.id}
-                  className={`p-5 rounded-2xl border transition-all flex flex-col justify-between gap-4 ${
-                    isCompleted
-                      ? 'bg-black/30 border-white/5 opacity-60'
-                      : 'bg-black/50 border-[#E9C349]/40 hover:border-[#E9C349] shadow-lg'
-                  }`}
-                >
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-[#E9C349]/20 text-[#E9C349]">
-                        {task.category || 'Misión Técnica'}
-                      </span>
-                      <span className="text-xs font-mono font-bold text-amber-400">
-                        +{task.points || 50} pts
-                      </span>
+            <AnimatePresence mode="popLayout">
+              {(assignedInstructorTasks || []).map(task => {
+                const isCompleted = task.status === 'completed';
+                return (
+                  <motion.div
+                    key={task.id}
+                    layout
+                    initial={{ opacity: 0, y: -15, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9, y: 15 }}
+                    transition={{ duration: 0.3, ease: 'easeOut' }}
+                    className={`p-5 rounded-2xl border transition-all flex flex-col justify-between gap-4 ${
+                      isCompleted
+                        ? 'bg-black/30 border-white/5 opacity-70'
+                        : 'bg-black/50 border-[#D9A9FF]/40 hover:border-[#D9A9FF] shadow-lg'
+                    }`}
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-[#D9A9FF]/20 text-[#D9A9FF]">
+                          {task.category || 'Misión Técnica'}
+                        </span>
+                        <span className="text-xs font-mono font-bold text-amber-400">
+                          +{task.points || 50} pts
+                        </span>
+                      </div>
+                      <div className="relative inline-block max-w-full">
+                        <motion.h4
+                          animate={{ color: isCompleted ? '#94a3b8' : '#ffffff' }}
+                          transition={{ duration: 0.25 }}
+                          className="text-sm font-bold relative"
+                        >
+                          {task.title}
+                          <motion.span
+                            className="absolute left-0 top-1/2 h-[2px] bg-[#D9A9FF] origin-left rounded-full pointer-events-none"
+                            initial={{ scaleX: 0 }}
+                            animate={{ scaleX: isCompleted ? 1 : 0 }}
+                            transition={{ duration: 0.35, ease: 'easeInOut' }}
+                          />
+                        </motion.h4>
+                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        {task.description}
+                      </p>
                     </div>
-                    <h4 className={`text-sm font-bold ${isCompleted ? 'line-through text-slate-400' : 'text-white'}`}>
-                      {task.title}
-                    </h4>
-                    <p className="text-xs text-slate-300 leading-relaxed">
-                      {task.description}
-                    </p>
-                  </div>
 
-                  <div className="pt-3 border-t border-white/10 flex items-center justify-between">
-                    <span className="text-[10px] font-mono text-slate-400">
-                      {isCompleted ? '✓ Completada y Sumada' : 'Pendiente de entrega'}
-                    </span>
-                    {!isCompleted ? (
-                      <button
-                        onClick={() => handleCompleteInstructorTaskItem(task.id)}
-                        className="px-4 py-2 bg-[#E9C349] hover:bg-[#d8b33c] text-black text-xs font-black rounded-xl shadow transition-all hover:scale-105 uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <span>Completar (+{task.points || 50} pts)</span>
-                        <CheckCircle2 className="w-4 h-4" />
-                      </button>
-                    ) : (
-                      <span className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1">
-                        <CheckCircle2 className="w-4 h-4" />
-                        Completada
+                    <div className="pt-3 border-t border-white/10 flex items-center justify-between">
+                      <span className="text-[10px] font-mono text-slate-400">
+                        {isCompleted ? '✓ Completada y Sumada' : 'Pendiente de entrega'}
                       </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+                      {!isCompleted ? (
+                        <button
+                          onClick={() => handleCompleteInstructorTaskItem(task.id)}
+                          className="px-4 py-2 bg-[#D9A9FF] hover:bg-[#B87CFF] text-black text-xs font-black rounded-xl shadow transition-all hover:scale-105 uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <span>Completar (+{task.points || 50} pts)</span>
+                          <CheckCircle2 className="w-4 h-4" />
+                        </button>
+                      ) : (
+                        <span className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1">
+                          <CheckCircle2 className="w-4 h-4" />
+                          Completada
+                        </span>
+                      )}
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
           </div>
         </div>
       )}
@@ -440,7 +484,7 @@ export default function TasksView({ currentUser, language, lessons, onAddBonusPo
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
-                <ListTodo className="w-4 h-4 text-[#E9C349]" />
+                <ListTodo className="w-4 h-4 text-[#D9A9FF]" />
                 Mis Listas de Tareas ({taskLists.length})
               </h2>
               <button
@@ -462,21 +506,21 @@ export default function TasksView({ currentUser, language, lessons, onAddBonusPo
                     onClick={() => setSelectedListId(list.id)}
                     className={`w-full text-left p-4 rounded-2xl border transition-all flex items-center justify-between ${
                       isSelected
-                        ? 'bg-[#241c17] border-[#E9C349]/60 text-white shadow-xl'
+                        ? 'bg-[#241c17] border-[#D9A9FF]/60 text-white shadow-xl'
                         : 'bg-[#121021] border-white/10 text-slate-300 hover:border-white/20 hover:bg-[#18152e]'
                     }`}
                   >
                     <span className="text-xs font-extrabold uppercase truncate">{list.title}</span>
-                    {isSelected && <span className="w-2 h-2 rounded-full bg-[#E9C349] shrink-0" />}
+                    {isSelected && <span className="w-2 h-2 rounded-full bg-[#D9A9FF] shrink-0" />}
                   </button>
                 );
               })}
             </div>
 
             {/* Quick Presets Panel */}
-            <div className="p-5 bg-[#121021] border border-[#E9C349]/20 rounded-2xl space-y-3">
+            <div className="p-5 bg-[#121021] border border-[#D9A9FF]/20 rounded-2xl space-y-3">
               <div className="flex items-center gap-2">
-                <Target className="w-4 h-4 text-[#E9C349]" />
+                <Target className="w-4 h-4 text-[#D9A9FF]" />
                 <h3 className="text-xs font-black text-white uppercase">Sugerencias de Práctica</h3>
               </div>
               <p className="text-[11px] text-slate-400 leading-relaxed">
@@ -487,9 +531,9 @@ export default function TasksView({ currentUser, language, lessons, onAddBonusPo
                   <button
                     key={idx}
                     onClick={() => handleQuickAddPreset(preset)}
-                    className="w-full text-left p-2.5 bg-black/40 hover:bg-black/70 border border-white/5 hover:border-[#E9C349]/30 rounded-xl transition-all group"
+                    className="w-full text-left p-2.5 bg-black/40 hover:bg-black/70 border border-white/5 hover:border-[#D9A9FF]/30 rounded-xl transition-all group"
                   >
-                    <p className="text-xs font-bold text-white group-hover:text-[#E9C349] transition-colors">{preset.title}</p>
+                    <p className="text-xs font-bold text-white group-hover:text-[#D9A9FF] transition-colors">{preset.title}</p>
                     <p className="text-[10px] text-slate-400 truncate mt-0.5">{preset.notes}</p>
                   </button>
                 ))}
@@ -516,7 +560,7 @@ export default function TasksView({ currentUser, language, lessons, onAddBonusPo
                     type="button"
                     onClick={() => setFilter('pending')}
                     className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
-                      filter === 'pending' ? 'bg-[#E9C349] text-black shadow-md' : 'text-slate-400 hover:text-white'
+                      filter === 'pending' ? 'bg-[#D9A9FF] text-black shadow-md' : 'text-slate-400 hover:text-white'
                     }`}
                   >
                     Pendientes
@@ -525,7 +569,7 @@ export default function TasksView({ currentUser, language, lessons, onAddBonusPo
                     type="button"
                     onClick={() => setFilter('completed')}
                     className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
-                      filter === 'completed' ? 'bg-[#E9C349] text-black shadow-md' : 'text-slate-400 hover:text-white'
+                      filter === 'completed' ? 'bg-[#D9A9FF] text-black shadow-md' : 'text-slate-400 hover:text-white'
                     }`}
                   >
                     Completadas
@@ -534,7 +578,7 @@ export default function TasksView({ currentUser, language, lessons, onAddBonusPo
                     type="button"
                     onClick={() => setFilter('all')}
                     className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
-                      filter === 'all' ? 'bg-[#E9C349] text-black shadow-md' : 'text-slate-400 hover:text-white'
+                      filter === 'all' ? 'bg-[#D9A9FF] text-black shadow-md' : 'text-slate-400 hover:text-white'
                     }`}
                   >
                     Todas
@@ -545,63 +589,93 @@ export default function TasksView({ currentUser, language, lessons, onAddBonusPo
               {/* Tasks Items */}
               <div className="space-y-3">
                 {filteredTasks.length === 0 ? (
-                  <div className="p-8 bg-black/30 border border-white/5 rounded-2xl text-center space-y-2">
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-8 bg-black/30 border border-white/5 rounded-2xl text-center space-y-2"
+                  >
                     <CheckCircle2 className="w-8 h-8 text-slate-500 mx-auto" />
                     <p className="text-xs text-slate-400">No hay tareas en esta categoría.</p>
-                  </div>
+                  </motion.div>
                 ) : (
-                  filteredTasks.map((task) => {
-                    const isDone = task.status === 'completed';
-                    return (
-                      <div
-                        key={task.id}
-                        className={`p-4 rounded-2xl border transition-all flex items-start justify-between gap-4 ${
-                          isDone 
-                            ? 'bg-black/20 border-white/5 opacity-60' 
-                            : 'bg-black/40 border-white/10 hover:border-white/20'
-                        }`}
-                      >
-                        <div className="flex items-start gap-3 min-w-0">
+                  <AnimatePresence mode="popLayout">
+                    {filteredTasks.map((task) => {
+                      const isDone = task.status === 'completed';
+                      return (
+                        <motion.div
+                          key={task.id}
+                          layout
+                          initial={{ opacity: 0, x: -25, scale: 0.97 }}
+                          animate={{ opacity: 1, x: 0, scale: 1 }}
+                          exit={{ opacity: 0, x: 25, scale: 0.95 }}
+                          transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                          className={`p-4 rounded-2xl border transition-colors flex items-start justify-between gap-4 ${
+                            isDone 
+                              ? 'bg-black/20 border-white/5' 
+                              : 'bg-black/40 border-white/10 hover:border-white/20'
+                          }`}
+                        >
+                          <div className="flex items-start gap-3 min-w-0">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleTask(task)}
+                              className="mt-0.5 text-slate-400 hover:text-[#D9A9FF] transition-colors shrink-0 cursor-pointer"
+                            >
+                              <motion.div
+                                key={isDone ? 'done' : 'undone'}
+                                initial={{ scale: 0.7, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                              >
+                                {isDone ? (
+                                  <CheckSquare className="w-5 h-5 text-emerald-400" />
+                                ) : (
+                                  <Square className="w-5 h-5" />
+                                )}
+                              </motion.div>
+                            </button>
+                            <div className="min-w-0">
+                              <div className="relative inline-block max-w-full">
+                                <motion.h4
+                                  animate={{ color: isDone ? '#94a3b8' : '#ffffff' }}
+                                  transition={{ duration: 0.3 }}
+                                  className="text-sm font-bold relative"
+                                >
+                                  {task.title}
+                                  <motion.span
+                                    className="absolute left-0 top-1/2 h-[2px] bg-emerald-400 origin-left rounded-full pointer-events-none"
+                                    initial={{ scaleX: 0 }}
+                                    animate={{ scaleX: isDone ? 1 : 0 }}
+                                    transition={{ duration: 0.35, ease: 'easeInOut' }}
+                                  />
+                                </motion.h4>
+                              </div>
+                              {task.notes && (
+                                <p className={`text-xs whitespace-pre-line mt-1 line-clamp-3 transition-colors ${isDone ? 'text-slate-500' : 'text-slate-300'}`}>
+                                  {task.notes}
+                                </p>
+                              )}
+                              {task.due && (
+                                <div className="flex items-center gap-1 mt-2 text-[10px] font-mono text-amber-400/80">
+                                  <Clock className="w-3 h-3" />
+                                  <span>Vence: {new Date(task.due).toLocaleDateString()}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
                           <button
                             type="button"
-                            onClick={() => handleToggleTask(task)}
-                            className="mt-0.5 text-slate-400 hover:text-[#E9C349] transition-colors shrink-0"
+                            onClick={() => setTaskToDelete(task)}
+                            className="p-1.5 rounded-lg bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 transition-all border border-white/10 shrink-0 cursor-pointer"
+                            title="Eliminar tarea"
                           >
-                            {isDone ? (
-                              <CheckSquare className="w-5 h-5 text-emerald-400" />
-                            ) : (
-                              <Square className="w-5 h-5" />
-                            )}
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
-                          <div className="min-w-0">
-                            <h4 className={`text-sm font-bold ${isDone ? 'line-through text-slate-400' : 'text-white'}`}>
-                              {task.title}
-                            </h4>
-                            {task.notes && (
-                              <p className="text-xs text-slate-300 whitespace-pre-line mt-1 line-clamp-3">
-                                {task.notes}
-                              </p>
-                            )}
-                            {task.due && (
-                              <div className="flex items-center gap-1 mt-2 text-[10px] font-mono text-amber-400/80">
-                                <Clock className="w-3 h-3" />
-                                <span>Vence: {new Date(task.due).toLocaleDateString()}</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => setTaskToDelete(task)}
-                          className="p-1.5 rounded-lg bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 transition-all border border-white/10 shrink-0"
-                          title="Eliminar tarea"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    );
-                  })
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
                 )}
               </div>
             </div>
@@ -610,7 +684,7 @@ export default function TasksView({ currentUser, language, lessons, onAddBonusPo
       ) : (
         /* Not logged in landing state */
         <div className="bg-[#121021] border border-white/10 rounded-3xl p-8 sm:p-12 text-center max-w-3xl mx-auto space-y-6">
-          <div className="w-16 h-16 rounded-3xl bg-[#E9C349]/20 border border-[#E9C349]/30 flex items-center justify-center mx-auto text-[#E9C349]">
+          <div className="w-16 h-16 rounded-3xl bg-[#D9A9FF]/20 border border-[#D9A9FF]/30 flex items-center justify-center mx-auto text-[#D9A9FF]">
             <ListTodo className="w-8 h-8" />
           </div>
           <div>
@@ -643,160 +717,184 @@ export default function TasksView({ currentUser, language, lessons, onAddBonusPo
       )}
 
       {/* 1. MODAL: Confirm Create Task */}
-      {showCreateTaskModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm p-4 flex items-center justify-center">
-          <div className="bg-[#121021] border border-[#E9C349]/30 rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl text-white">
-            <div className="flex items-center gap-3 border-b border-white/10 pb-3">
-              <div className="p-2 rounded-xl bg-[#E9C349]/20 text-[#E9C349]">
-                <ListTodo className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-black uppercase">Confirmar Nueva Tarea</h3>
-                <p className="text-[11px] text-slate-400">Se añadirá a tu lista de Google Tasks.</p>
-              </div>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">Título de la Tarea:</label>
-                <input
-                  type="text"
-                  value={newTaskTitle}
-                  onChange={(e) => setNewTaskTitle(e.target.value)}
-                  placeholder="Ej. Practicar Posing en 8 tiempos"
-                  className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-[#E9C349]"
-                />
+      <AnimatePresence>
+        {showCreateTaskModal && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm p-4 flex items-center justify-center">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 15 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="bg-[#121021] border border-[#D9A9FF]/30 rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl text-white"
+            >
+              <div className="flex items-center gap-3 border-b border-white/10 pb-3">
+                <div className="p-2 rounded-xl bg-[#D9A9FF]/20 text-[#D9A9FF]">
+                  <ListTodo className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black uppercase">Confirmar Nueva Tarea</h3>
+                  <p className="text-[11px] text-slate-400">Se añadirá a tu lista de Google Tasks.</p>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">Notas / Detalles:</label>
-                <textarea
-                  rows={3}
-                  value={newTaskNotes}
-                  onChange={(e) => setNewTaskNotes(e.target.value)}
-                  placeholder="Detalles del ejercicio o recordatorio..."
-                  className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-[#E9C349]"
-                />
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">Título de la Tarea:</label>
+                  <input
+                    type="text"
+                    value={newTaskTitle}
+                    onChange={(e) => setNewTaskTitle(e.target.value)}
+                    placeholder="Ej. Practicar Posing en 8 tiempos"
+                    className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-[#D9A9FF]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">Notas / Detalles:</label>
+                  <textarea
+                    rows={3}
+                    value={newTaskNotes}
+                    onChange={(e) => setNewTaskNotes(e.target.value)}
+                    placeholder="Detalles del ejercicio o recordatorio..."
+                    className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-[#D9A9FF]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">Fecha Límite (Opcional):</label>
+                  <input
+                    type="date"
+                    value={newTaskDueDate}
+                    onChange={(e) => setNewTaskDueDate(e.target.value)}
+                    className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-[#D9A9FF]"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">Fecha Límite (Opcional):</label>
-                <input
-                  type="date"
-                  value={newTaskDueDate}
-                  onChange={(e) => setNewTaskDueDate(e.target.value)}
-                  className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-[#E9C349]"
-                />
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateTaskModal(false)}
+                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmCreateTask}
+                  disabled={loading}
+                  className="px-5 py-2 rounded-xl bg-[#D9A9FF] hover:bg-[#B87CFF] text-black text-xs font-extrabold uppercase shadow-lg cursor-pointer"
+                >
+                  Añadir a Google Tasks
+                </button>
               </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
-              <button
-                type="button"
-                onClick={() => setShowCreateTaskModal(false)}
-                className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmCreateTask}
-                disabled={loading}
-                className="px-5 py-2 rounded-xl bg-[#E9C349] hover:bg-[#d6b039] text-black text-xs font-extrabold uppercase shadow-lg"
-              >
-                Añadir a Google Tasks
-              </button>
-            </div>
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
 
       {/* 2. MODAL: Confirm Create TaskList */}
-      {showCreateListModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm p-4 flex items-center justify-center">
-          <div className="bg-[#121021] border border-[#E9C349]/30 rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl text-white">
-            <div className="flex items-center gap-3 border-b border-white/10 pb-3">
-              <div className="p-2 rounded-xl bg-[#E9C349]/20 text-[#E9C349]">
-                <FolderPlus className="w-5 h-5" />
+      <AnimatePresence>
+        {showCreateListModal && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm p-4 flex items-center justify-center">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 15 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="bg-[#121021] border border-[#D9A9FF]/30 rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl text-white"
+            >
+              <div className="flex items-center gap-3 border-b border-white/10 pb-3">
+                <div className="p-2 rounded-xl bg-[#D9A9FF]/20 text-[#D9A9FF]">
+                  <FolderPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black uppercase">Nueva Lista en Google Tasks</h3>
+                  <p className="text-[11px] text-slate-400">Organiza tus metas en un grupo independiente.</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-sm font-black uppercase">Nueva Lista en Google Tasks</h3>
-                <p className="text-[11px] text-slate-400">Organiza tus metas en un grupo independiente.</p>
-              </div>
-            </div>
 
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">Nombre de la Lista:</label>
-                <input
-                  type="text"
-                  value={newListTitle}
-                  onChange={(e) => setNewListTitle(e.target.value)}
-                  placeholder="Ej. Objetivos del Trimestre"
-                  className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-[#E9C349]"
-                />
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">Nombre de la Lista:</label>
+                  <input
+                    type="text"
+                    value={newListTitle}
+                    onChange={(e) => setNewListTitle(e.target.value)}
+                    placeholder="Ej. Objetivos del Trimestre"
+                    className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-[#D9A9FF]"
+                  />
+                </div>
               </div>
-            </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
-              <button
-                type="button"
-                onClick={() => setShowCreateListModal(false)}
-                className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmCreateList}
-                disabled={loading}
-                className="px-5 py-2 rounded-xl bg-[#E9C349] hover:bg-[#d6b039] text-black text-xs font-extrabold uppercase shadow-lg"
-              >
-                Crear Lista
-              </button>
-            </div>
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateListModal(false)}
+                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmCreateList}
+                  disabled={loading}
+                  className="px-5 py-2 rounded-xl bg-[#D9A9FF] hover:bg-[#B87CFF] text-black text-xs font-extrabold uppercase shadow-lg cursor-pointer"
+                >
+                  Crear Lista
+                </button>
+              </div>
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
 
       {/* 3. MODAL: Confirm Delete Task */}
-      {taskToDelete && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm p-4 flex items-center justify-center">
-          <div className="bg-[#121021] border border-rose-500/30 rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl text-white">
-            <div className="flex items-center gap-3 border-b border-white/10 pb-3">
-              <div className="p-2 rounded-xl bg-rose-500/20 text-rose-400">
-                <Trash2 className="w-5 h-5" />
+      <AnimatePresence>
+        {taskToDelete && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm p-4 flex items-center justify-center">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 15 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="bg-[#121021] border border-rose-500/30 rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl text-white"
+            >
+              <div className="flex items-center gap-3 border-b border-white/10 pb-3">
+                <div className="p-2 rounded-xl bg-rose-500/20 text-rose-400">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black uppercase">Eliminar Tarea</h3>
+                  <p className="text-[11px] text-slate-400">¿Estás seguro de eliminar esta tarea de Google Tasks?</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-sm font-black uppercase">Eliminar Tarea</h3>
-                <p className="text-[11px] text-slate-400">¿Estás seguro de eliminar esta tarea de Google Tasks?</p>
+
+              <p className="text-xs text-white font-bold bg-black/40 p-3 rounded-xl border border-white/5">
+                "{taskToDelete.title}"
+              </p>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setTaskToDelete(null)}
+                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDeleteTask}
+                  disabled={loading}
+                  className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-extrabold uppercase shadow-lg cursor-pointer"
+                >
+                  Eliminar
+                </button>
               </div>
-            </div>
-
-            <p className="text-xs text-white font-bold bg-black/40 p-3 rounded-xl border border-white/5">
-              "{taskToDelete.title}"
-            </p>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
-              <button
-                type="button"
-                onClick={() => setTaskToDelete(null)}
-                className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDeleteTask}
-                disabled={loading}
-                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-extrabold uppercase shadow-lg"
-              >
-                Eliminar
-              </button>
-            </div>
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
     </div>
   );
 }

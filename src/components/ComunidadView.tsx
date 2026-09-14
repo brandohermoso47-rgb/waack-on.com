@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Megaphone, 
@@ -22,12 +22,14 @@ import {
   Play,
   SlidersHorizontal,
   Check,
-  Globe
+  Globe,
+  Trophy
 } from 'lucide-react';
 import { User, Announcement, Presentation, ChatMessage } from '../types';
 import { Language, translations, getAITranslation } from '../lib/translations';
 import { Languages } from 'lucide-react';
 import AnnouncementImagePicker from './AnnouncementImagePicker';
+import WeeklyCommunityChallengeView from './WeeklyCommunityChallengeView';
 
 interface ComunidadViewProps {
   currentUser: User;
@@ -57,7 +59,7 @@ export default function ComunidadView({
   language
 }: ComunidadViewProps) {
   // Navigation inside Comunidad (sub-tabs)
-  const [subTab, setSubTab] = useState<'feed' | 'lobby' | 'presentate' | 'anuncios'>('feed');
+  const [subTab, setSubTab] = useState<'feed' | 'lobby' | 'presentate' | 'anuncios' | 'reto'>('feed');
 
   // Dynamic Filters State
   const [activeFilter, setActiveFilter] = useState<CommunityFilterType>('all');
@@ -66,9 +68,13 @@ export default function ComunidadView({
   // Translation cache state
   const [translatedMessages, setTranslatedMessages] = useState<Record<string, string>>({});
 
-  // Input states
-  const [newAnnTitle, setNewAnnTitle] = useState('');
-  const [newAnnContent, setNewAnnContent] = useState('');
+  // Input states with Draft System (local storage auto-save)
+  const [newAnnTitle, setNewAnnTitle] = useState<string>(() => {
+    return localStorage.getItem('waackon_draft_announcement_title') || '';
+  });
+  const [newAnnContent, setNewAnnContent] = useState<string>(() => {
+    return localStorage.getItem('waackon_draft_announcement_content') || '';
+  });
   const [newAnnImportant, setNewAnnImportant] = useState(false);
   const [newAnnImage, setNewAnnImage] = useState<string | null>(null);
   const [newAnnCategory, setNewAnnCategory] = useState<'competencias' | 'sesiones' | 'clases' | 'comunicados'>('comunicados');
@@ -80,7 +86,35 @@ export default function ComunidadView({
   const [newPresVideo, setNewPresVideo] = useState('');
   const [showPresForm, setShowPresForm] = useState(false);
 
-  const [newLobbyText, setNewLobbyText] = useState('');
+  const [newLobbyText, setNewLobbyText] = useState<string>(() => {
+    return localStorage.getItem('waackon_draft_community_chat') || '';
+  });
+
+  // Save Community Chat draft
+  useEffect(() => {
+    if (newLobbyText) {
+      localStorage.setItem('waackon_draft_community_chat', newLobbyText);
+    } else {
+      localStorage.removeItem('waackon_draft_community_chat');
+    }
+  }, [newLobbyText]);
+
+  // Save Announcement draft
+  useEffect(() => {
+    if (newAnnTitle) {
+      localStorage.setItem('waackon_draft_announcement_title', newAnnTitle);
+    } else {
+      localStorage.removeItem('waackon_draft_announcement_title');
+    }
+  }, [newAnnTitle]);
+
+  useEffect(() => {
+    if (newAnnContent) {
+      localStorage.setItem('waackon_draft_announcement_content', newAnnContent);
+    } else {
+      localStorage.removeItem('waackon_draft_announcement_content');
+    }
+  }, [newAnnContent]);
 
   // Comment input per presentation
   const [commentInputs, setCommentInputs] = useState<{ [key: string]: string }>({});
@@ -102,6 +136,8 @@ export default function ComunidadView({
     setNewAnnImage(null);
     setNewAnnActionUrl('');
     setShowAnnForm(false);
+    localStorage.removeItem('waackon_draft_announcement_title');
+    localStorage.removeItem('waackon_draft_announcement_content');
   };
 
   const handlePresSubmit = (e: React.FormEvent) => {
@@ -118,6 +154,7 @@ export default function ComunidadView({
     if (!newLobbyText.trim()) return;
     onAddChatMessage(newLobbyText);
     setNewLobbyText('');
+    localStorage.removeItem('waackon_draft_community_chat');
   };
 
   const handleCommentSubmit = (presId: string) => {
@@ -252,7 +289,7 @@ export default function ComunidadView({
   });
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 bg-background text-on-surface flex flex-col font-body-md">
+    <div className="flex-1 min-h-full w-full p-6 bg-background text-on-surface flex flex-col font-body-md">
       {/* Title */}
       <div className="border-b border-tertiary/20 pb-4 mb-6 z-10">
         <h2 className="text-2xl font-display-lg font-extrabold text-tertiary gold-glow tracking-tight uppercase">BIENVENIDA Y COMUNIDAD</h2>
@@ -301,6 +338,22 @@ export default function ComunidadView({
         </button>
 
         <button
+          id="subtab-reto"
+          onClick={() => setSubTab('reto')}
+          className={`group h-11 min-w-[190px] px-4 py-2.5 text-xs font-bold tracking-wider transition-all flex items-center justify-center gap-2 border rounded-xl shrink-0 focus:outline-none cursor-pointer ${
+            subTab === 'reto' 
+              ? 'bg-[#D9A9FF] text-black border-[#D9A9FF] shadow-lg scale-105 font-extrabold' 
+              : 'bg-[#1b1424]/70 text-[#D9A9FF] border-[#D9A9FF]/30 hover:border-[#D9A9FF] hover:bg-[#D9A9FF]/10'
+          }`}
+        >
+          <Trophy className={`w-4 h-4 shrink-0 transition-transform duration-300 group-hover:scale-125 ${subTab === 'reto' ? 'text-black' : 'text-[#D9A9FF]'}`} />
+          🏆 RETO SEMANAL
+          <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono font-bold ${subTab === 'reto' ? 'bg-black/20 text-black' : 'bg-[#D9A9FF]/20 text-[#D9A9FF]'}`}>
+            NEW
+          </span>
+        </button>
+
+        <button
           id="subtab-anuncios"
           onClick={() => setSubTab('anuncios')}
           className={`group h-11 min-w-[170px] px-4 py-2.5 text-xs font-bold tracking-wider transition-all flex items-center justify-center gap-2 border rounded-xl shrink-0 focus:outline-none ${
@@ -315,11 +368,11 @@ export default function ComunidadView({
       </div>
 
       {/* DYNAMIC FILTERS BAR (For feed, presentate and anuncios) */}
-      {subTab !== 'lobby' && (
+      {subTab !== 'lobby' && subTab !== 'reto' && (
         <div className="mb-6 p-4 bg-surface-container/90 border border-tertiary/20 rounded-2xl shadow-xl space-y-3 z-10">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-tertiary/10 pb-3">
             <div className="flex items-center gap-2 text-xs font-mono font-bold text-tertiary uppercase">
-              <SlidersHorizontal className="w-4 h-4 text-[#E9C349]" />
+              <SlidersHorizontal className="w-4 h-4 text-[#D9A9FF]" />
               <span>Filtros Dinámicos del Muro</span>
             </div>
 
@@ -348,7 +401,7 @@ export default function ComunidadView({
           {/* Quick Filter Pill Buttons */}
           <div className="flex flex-wrap items-center gap-2 pt-1">
             <span className="text-[10px] font-mono font-bold text-on-surface-variant/70 uppercase mr-1 flex items-center gap-1">
-              <Filter className="w-3 h-3 text-[#E9C349]" />
+              <Filter className="w-3 h-3 text-[#D9A9FF]" />
               Mostrar:
             </span>
 
@@ -358,7 +411,7 @@ export default function ComunidadView({
               onClick={() => setActiveFilter('all')}
               className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-1.5 border cursor-pointer ${
                 activeFilter === 'all'
-                  ? 'bg-[#E9C349] text-black border-[#E9C349] shadow-md scale-105'
+                  ? 'bg-[#D9A9FF] text-black border-[#D9A9FF] shadow-md scale-105'
                   : 'bg-[#0D0D11] text-on-surface-variant border-tertiary/15 hover:border-tertiary/40 hover:text-white'
               }`}
             >
@@ -408,7 +461,7 @@ export default function ComunidadView({
               onClick={() => setActiveFilter('important')}
               className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-1.5 border cursor-pointer ${
                 activeFilter === 'important'
-                  ? 'bg-[#9A2B3C] text-white border-[#9A2B3C] shadow-md scale-105'
+                  ? 'bg-[#C23E9E] text-white border-[#C23E9E] shadow-md scale-105'
                   : 'bg-[#0D0D11] text-on-surface-variant border-tertiary/15 hover:border-red-500/40 hover:text-red-300'
               }`}
             >
@@ -516,7 +569,7 @@ export default function ComunidadView({
                       <p className="text-xs leading-relaxed font-semibold text-on-surface-variant">
                         {displayedText}
                         {isTranslated && (
-                          <span className="text-[9px] text-[#E9C349] font-mono block mt-1">
+                          <span className="text-[9px] text-[#D9A9FF] font-mono block mt-1">
                             * {translations[language].translatedByIA}
                           </span>
                         )}
@@ -528,28 +581,56 @@ export default function ComunidadView({
             </div>
 
             {/* Chat input form */}
-            <form onSubmit={handleLobbySubmit} className="p-3.5 bg-surface-container/80 border-t border-tertiary/30 flex gap-2.5">
-              <input
-                id="chat-lobby-input"
-                type="text"
-                placeholder={translations[language].writeLobby}
-                value={newLobbyText}
-                onChange={(e) => setNewLobbyText(e.target.value)}
-                className="flex-1 bg-[#18171B] border-2 border-tertiary/40 rounded-xl px-4 py-3 text-xs text-on-surface placeholder-on-surface-variant/60 focus:outline-none focus:border-tertiary focus:ring-2 focus:ring-tertiary/20 leading-relaxed font-semibold shadow-inner transition-all"
-              />
-              <button
-                id="chat-lobby-submit"
-                type="submit"
-                className="bg-tertiary hover:bg-tertiary-container text-on-tertiary border border-tertiary p-3 rounded-xl shadow-lg hover:scale-105 active:scale-95 transition-all flex items-center justify-center font-bold"
-              >
-                <Send className="w-4 h-4" />
-              </button>
+            <form onSubmit={handleLobbySubmit} className="p-3.5 bg-surface-container/80 border-t border-tertiary/30 flex flex-col gap-2">
+              {newLobbyText.trim() !== '' && (
+                <div className="flex items-center justify-between text-[10px] font-mono text-emerald-400 bg-emerald-950/70 border border-emerald-500/40 px-3 py-1 rounded-xl">
+                  <span className="flex items-center gap-1.5 font-bold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                    💾 Borrador guardado localmente
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewLobbyText('');
+                      localStorage.removeItem('waackon_draft_community_chat');
+                    }}
+                    className="text-slate-400 hover:text-rose-300 underline cursor-pointer"
+                  >
+                    Descartar borrador
+                  </button>
+                </div>
+              )}
+              <div className="flex gap-2.5">
+                <input
+                  id="chat-lobby-input"
+                  type="text"
+                  placeholder={translations[language].writeLobby}
+                  value={newLobbyText}
+                  onChange={(e) => setNewLobbyText(e.target.value)}
+                  className="flex-1 bg-[#18171B] border-2 border-tertiary/40 rounded-xl px-4 py-3 text-xs text-on-surface placeholder-on-surface-variant/60 focus:outline-none focus:border-tertiary focus:ring-2 focus:ring-tertiary/20 leading-relaxed font-semibold shadow-inner transition-all"
+                />
+                <button
+                  id="chat-lobby-submit"
+                  type="submit"
+                  className="bg-tertiary hover:bg-tertiary-container text-on-tertiary border border-tertiary p-3 rounded-xl shadow-lg hover:scale-105 active:scale-95 transition-all flex items-center justify-center font-bold cursor-pointer"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
             </form>
           </div>
         )}
 
-        {/* 2. MURO GENERAL, PRESENTATE OR ANUNCIOS TAB */}
-        {subTab !== 'lobby' && (
+        {/* 2. RETO SEMANAL TAB */}
+        {subTab === 'reto' && (
+          <WeeklyCommunityChallengeView 
+            currentUser={currentUser}
+            language={language}
+          />
+        )}
+
+        {/* 3. MURO GENERAL, PRESENTATE OR ANUNCIOS TAB */}
+        {subTab !== 'lobby' && subTab !== 'reto' && (
           <div className="space-y-6">
             {/* Context Header and Creator Toggles */}
             {subTab === 'presentate' && (
@@ -585,27 +666,57 @@ export default function ComunidadView({
             )}
 
             {subTab === 'feed' && (
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-surface-container/60 border border-tertiary/15 p-4 rounded-2xl">
-                <div>
-                  <h3 className="text-xs font-mono font-bold text-tertiary uppercase tracking-wider flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-[#E9C349]" />
-                    Muro Social Unificado
-                  </h3>
-                  <p className="text-[11px] text-on-surface-variant mt-0.5 font-semibold">
-                    Explora novedades de instructores y publicaciones de la comunidad en un solo lugar.
-                  </p>
-                </div>
+              <>
+                {/* Active Weekly Challenge Callout on Muro Feed */}
+                <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#21162B] via-[#15121c] to-[#0D0D11] border-2 border-tertiary/40 p-4 sm:p-5 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-start sm:items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-2xl bg-[#D9A9FF]/15 border border-[#D9A9FF]/40 flex items-center justify-center text-[#D9A9FF] shrink-0 shadow-md">
+                      <Trophy className="w-6 h-6 animate-bounce" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#D9A9FF] bg-[#D9A9FF]/15 px-2 py-0.5 rounded-full border border-[#D9A9FF]/30">
+                          🏆 Reto Semanal Destacado
+                        </span>
+                        <span className="text-[11px] font-mono text-emerald-400 font-semibold">• Votaciones Abiertas</span>
+                      </div>
+                      <h4 className="text-sm font-bold text-white mt-1">70s Soulful Posing & High-Speed Cross Rolls</h4>
+                      <p className="text-xs text-gray-300 mt-0.5 font-medium">Sube tu video respondiendo a la consigna temática, gana votos de la comunidad y compite en el Leaderboard.</p>
+                    </div>
+                  </div>
 
-                <div className="flex gap-2">
                   <button
-                    onClick={() => { setSubTab('presentate'); setShowPresForm(true); }}
-                    className="px-3 py-1.5 bg-tertiary/10 hover:bg-tertiary/20 text-tertiary border border-tertiary/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                    id="btn-feed-goto-challenge"
+                    onClick={() => setSubTab('reto')}
+                    className="shrink-0 bg-[#D9A9FF] hover:bg-[#B87CFF] text-black font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-1.5 transition-all hover:scale-105 active:scale-95 cursor-pointer font-mono uppercase tracking-wider"
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Publicar Video / Post</span>
+                    <Trophy className="w-3.5 h-3.5 text-black" />
+                    <span>Ver Reto & Leaderboard</span>
                   </button>
                 </div>
-              </div>
+
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-surface-container/60 border border-tertiary/15 p-4 rounded-2xl">
+                  <div>
+                    <h3 className="text-xs font-mono font-bold text-tertiary uppercase tracking-wider flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-[#D9A9FF]" />
+                      Muro Social Unificado
+                    </h3>
+                    <p className="text-[11px] text-on-surface-variant mt-0.5 font-semibold">
+                      Explora novedades de instructores y publicaciones de la comunidad en un solo lugar.
+                    </p>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setSubTab('presentate'); setShowPresForm(true); }}
+                      className="px-3 py-1.5 bg-tertiary/10 hover:bg-tertiary/20 text-tertiary border border-tertiary/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Publicar Video / Post</span>
+                    </button>
+                  </div>
+                </div>
+              </>
             )}
 
             {/* Forms if active */}
@@ -670,6 +781,27 @@ export default function ComunidadView({
                   <span className="text-[10px] text-on-surface-variant font-mono">Panel de Instructor</span>
                 </div>
 
+                {(newAnnTitle.trim() !== '' || newAnnContent.trim() !== '') && (
+                  <div className="flex items-center justify-between bg-emerald-950/70 border border-emerald-500/40 px-3 py-1.5 rounded-xl text-xs font-mono text-emerald-300">
+                    <span className="flex items-center gap-1.5 font-bold">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                      💾 Borrador de anuncio guardado localmente
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewAnnTitle('');
+                        setNewAnnContent('');
+                        localStorage.removeItem('waackon_draft_announcement_title');
+                        localStorage.removeItem('waackon_draft_announcement_content');
+                      }}
+                      className="text-slate-400 hover:text-rose-300 text-[10px] underline cursor-pointer"
+                    >
+                      Limpiar borrador
+                    </button>
+                  </div>
+                )}
+
                 {/* Categoría */}
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-mono font-bold text-slate-300 uppercase">
@@ -688,7 +820,7 @@ export default function ComunidadView({
                         onClick={() => setNewAnnCategory(c.id as any)}
                         className={`p-2 rounded-xl text-[10px] font-mono font-bold border transition-all text-center ${
                           newAnnCategory === c.id
-                            ? 'bg-[#E9C349] text-black border-[#E9C349]'
+                            ? 'bg-[#D9A9FF] text-black border-[#D9A9FF]'
                             : 'bg-[#0A0A0A] text-slate-300 border-[#262626] hover:border-white/20'
                         }`}
                       >
@@ -757,7 +889,7 @@ export default function ComunidadView({
                   <button
                     id="submit-ann-form"
                     type="submit"
-                    className="px-4 py-2 bg-[#E9C349] hover:bg-[#d8b33c] text-black text-xs font-black rounded-lg shadow-lg hover:scale-105 active:scale-95 uppercase transition-all"
+                    className="px-4 py-2 bg-[#D9A9FF] hover:bg-[#B87CFF] text-black text-xs font-black rounded-lg shadow-lg hover:scale-105 active:scale-95 uppercase transition-all"
                   >
                     Publicar Novedad Ahora
                   </button>
@@ -869,7 +1001,7 @@ export default function ComunidadView({
                               alt={ann.title}
                               className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
                             />
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-[#E9C349] font-mono text-xs font-bold">
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-[#D9A9FF] font-mono text-xs font-bold">
                               <ZoomIn className="w-4 h-4" />
                               <span>Ampliar Afiche</span>
                             </div>
@@ -884,7 +1016,7 @@ export default function ComunidadView({
                             href={ann.actionUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#E9C349] hover:bg-[#d8b33c] text-black text-xs font-black rounded-lg transition-all shadow-md"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#D9A9FF] hover:bg-[#B87CFF] text-black text-xs font-black rounded-lg transition-all shadow-md"
                           >
                             {post.hasVideo ? <Play className="w-3.5 h-3.5 fill-black" /> : <ExternalLink className="w-3.5 h-3.5" />}
                             <span>{post.hasVideo ? 'Ver Video / Convocatoria' : 'Ver Enlace / Inscripción'}</span>
@@ -937,12 +1069,12 @@ export default function ComunidadView({
                           <div className="mt-3.5 aspect-video rounded-xl border border-tertiary/10 overflow-hidden bg-[#08080a] relative shadow-lg group/vid cursor-pointer">
                             <img src={pres.videoUrl} alt="Presentation Media" className="w-full h-full object-cover opacity-80 group-hover/vid:scale-105 transition-transform duration-300" />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex items-center justify-center">
-                              <div className="w-12 h-12 rounded-full bg-[#E9C349]/90 text-black flex items-center justify-center shadow-2xl group-hover/vid:scale-110 transition-transform">
+                              <div className="w-12 h-12 rounded-full bg-[#D9A9FF]/90 text-black flex items-center justify-center shadow-2xl group-hover/vid:scale-110 transition-transform">
                                 <Play className="w-6 h-6 fill-black ml-0.5" />
                               </div>
                             </div>
                             <div className="absolute bottom-2 left-2 right-2 flex justify-between items-center text-[10px] font-mono text-white font-bold bg-black/60 px-2.5 py-1 rounded-lg backdrop-blur-sm">
-                              <span className="flex items-center gap-1"><Video className="w-3 h-3 text-[#E9C349]" /> Video de Práctica / Demostración</span>
+                              <span className="flex items-center gap-1"><Video className="w-3 h-3 text-[#D9A9FF]" /> Video de Práctica / Demostración</span>
                               <span className="text-tertiary uppercase">Reproducir</span>
                             </div>
                           </div>
@@ -1026,7 +1158,7 @@ export default function ComunidadView({
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
-                    className="relative max-w-4xl w-full bg-[#121212] border border-[#E9C349]/50 rounded-2xl overflow-hidden p-3 shadow-2xl"
+                    className="relative max-w-4xl w-full bg-[#121212] border border-[#D9A9FF]/50 rounded-2xl overflow-hidden p-3 shadow-2xl"
                   >
                     <button
                       type="button"

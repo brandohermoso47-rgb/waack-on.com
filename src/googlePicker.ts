@@ -67,7 +67,7 @@ export const fetchDriveFiles = async (
     }
 
     const res = await fetch(
-      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,webViewLink,iconLink,thumbnailLink,size)&pageSize=20`,
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,webViewLink,webContentLink,iconLink,thumbnailLink,size)&pageSize=30`,
       {
         headers: { Authorization: `Bearer ${activeToken}` }
       }
@@ -86,5 +86,46 @@ export const fetchDriveFiles = async (
   } catch (err: any) {
     console.error('Error fetching Drive files:', err);
     return { files: [], error: err.message || 'Error al conectar con Google Drive' };
+  }
+};
+
+/**
+ * Fetch specifically audio/music files from Google Drive
+ */
+export const fetchAudioDriveFiles = async (
+  queryStr: string = '',
+  token?: string
+): Promise<{ files: DrivePickedFile[]; error?: string }> => {
+  const activeToken = token || cachedPickerAccessToken;
+  if (!activeToken) {
+    return { files: [], error: 'AUTH_REQUIRED' };
+  }
+
+  try {
+    let q = "trashed = false and (mimeType contains 'audio/' or mimeType contains 'music' or name contains '.mp3' or name contains '.wav' or name contains '.m4a')";
+    if (queryStr.trim()) {
+      q += ` and name contains '${queryStr.replace(/'/g, "\\'")}'`;
+    }
+
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,webViewLink,webContentLink,iconLink,thumbnailLink,size)&pageSize=30`,
+      {
+        headers: { Authorization: `Bearer ${activeToken}` }
+      }
+    );
+
+    if (!res.ok) {
+      if (res.status === 401) {
+        cachedPickerAccessToken = null;
+        return { files: [], error: 'AUTH_REQUIRED' };
+      }
+      throw new Error(`Drive API status ${res.status}`);
+    }
+
+    const data = await res.json();
+    return { files: data.files || [] };
+  } catch (err: any) {
+    console.error('Error fetching audio Drive files:', err);
+    return { files: [], error: err.message || 'Error al obtener archivos de audio de Google Drive' };
   }
 };

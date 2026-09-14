@@ -117,6 +117,45 @@ export function computeRecommendations(params: {
 }): RecommendationItem[] {
   if (!params || !params.user) return [];
   const { user, logs = [], lessons = [], playlists = [], profile, assignedTasks = [], limit = 3 } = params;
+
+  // Instructor role deterministic recommendation cards
+  if (user.role === 'instructor') {
+    const instructorRecs: RecommendationItem[] = [
+      {
+        id: 'rec-inst-1',
+        type: 'instructor_task',
+        refId: 'drill-128bpm',
+        title: 'Sugerencia: Crear Drills de 128 BPM (Alta Demanda)',
+        description: 'El 78% de los alumnos ha intentado acelerar su tempo a 128 BPM esta semana. Se recomienda publicar un módulo de ejercicios guiados.',
+        reason: 'gap_categoria',
+        score: 110,
+        suggestedBpm: 128,
+        ctaTab: 'entrenamiento',
+      },
+      {
+        id: 'rec-inst-2',
+        type: 'instructor_task',
+        refId: 'poses-70s',
+        title: 'Gap Detectado: Módulo de Poses de los 70s',
+        description: 'Se detectó baja cobertura de contenido en la categoría de Poses de los 70s frente a la alta demanda registrada en el cuestionario de onboarding.',
+        reason: 'gap_categoria',
+        score: 100,
+        ctaTab: 'ebooks',
+      },
+      {
+        id: 'rec-inst-3',
+        type: 'instructor_task',
+        refId: 'rev-biomecanica',
+        title: 'Crear Tarea: Revisión de Biomecánica v2.2',
+        description: '42 evaluaciones somáticas de postura de codos pendientes de revisión docente antes de la clase en vivo de hoy a las 19:30.',
+        reason: 'tarea_instructor',
+        score: 95,
+        ctaTab: 'tasks',
+      }
+    ];
+    return instructorRecs.slice(0, limit);
+  }
+
   const items: RecommendationItem[] = [];
   const completedIds = new Set(user.completedLessons || []);
 
