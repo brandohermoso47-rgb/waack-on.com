@@ -67,11 +67,36 @@ export const chatSchema = z.object({
 
 // 6. Stripe Session Schema
 export const checkoutSessionSchema = z.object({
-  tier: z.enum(['annual', 'monthly', 'ebook']).default('annual'),
+  tier: z.enum(['annual', 'monthly', 'ebook', 'clase_profesor', 'plan_instructor', 'plan_academia']).default('annual'),
+  planType: z.enum(['clase_profesor', 'plan_instructor', 'plan_academia', 'student', 'instructor', 'studio', 'academia']).optional(),
   successUrl: z.string().url().optional(),
   cancelUrl: z.string().url().optional(),
   userEmail: z.string().email().optional().or(z.literal('')),
   userId: z.string().optional()
+});
+
+// 6b. Webhook Payment Event Schema (Stripe / Shopify / Mercado Pago)
+export const webhookPaymentSchema = z.object({
+  userId: z.string().optional().or(z.literal('')),
+  userEmail: z.string().email().optional().or(z.literal('')),
+  planType: z.enum([
+    'clase_profesor', 
+    'clase', 
+    'inscripcion_profesor', 
+    'plan_instructor', 
+    'membresia_instructor', 
+    'plan_academia', 
+    'membresia_academia', 
+    'student', 
+    'estudiante', 
+    'instructor', 
+    'studio', 
+    'academia'
+  ]).default('clase_profesor'),
+  gateway: z.enum(['stripe', 'shopify', 'mercadopago', 'simulated']).default('stripe'),
+  transactionId: z.string().optional().default('tx_' + Date.now()),
+  amountUSD: z.number().optional().default(29.99),
+  status: z.enum(['completed', 'succeeded', 'paid', 'approved']).default('completed')
 });
 
 // 7. Analytics Practice Log Sync Schema
@@ -130,6 +155,16 @@ export const imageGenerationSchema = z.object({
   prompt: z.string().trim().min(3, 'El prompt para generar la imagen es requerido').max(1000),
   aspectRatio: z.enum(['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9', '21:9']).default('1:1'),
   model: z.enum(['gemini-3.1-flash-image', 'gemini-3-pro-image', 'gemini-3.1-flash-lite-image']).default('gemini-3.1-flash-image')
+});
+
+// 12. Gemini Lesson Executive Summary Zod Schema
+export const lessonSummarySchema = z.object({
+  lessonId: z.string().optional(),
+  lessonTitle: z.string().trim().min(1, 'Título de lección requerido'),
+  lessonDescription: z.string().trim().optional().default(''),
+  instructorName: z.string().trim().optional().default('Brando Hermoso'),
+  category: z.string().trim().optional().default('técnica'),
+  transcription: z.string().trim().min(5, 'Transcripción requerida para generar el resumen')
 });
 
 

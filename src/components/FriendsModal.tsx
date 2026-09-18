@@ -14,9 +14,11 @@ import {
   Circle,
   Instagram,
   ExternalLink,
-  Globe
+  Globe,
+  MessageSquare
 } from 'lucide-react';
 import { User, FriendshipDoc } from '../types';
+import { openDirectMessageWithUser } from './UnifiedFloatingMessenger';
 import { 
   searchUsersByQuery, 
   sendFriendRequest, 
@@ -135,17 +137,17 @@ export const FriendsSection: React.FC<FriendsSectionProps> = ({
   };
 
   return (
-    <div className="w-full bg-[#141414] border border-[#E9C349]/30 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+    <div className="w-full bg-[#141414] border border-[#D9A9FF]/30 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
       {/* Header */}
       <div className="p-5 border-b border-white/10 bg-[#1c1a1a] flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-[#E9C349]/15 border border-[#E9C349]/30 text-[#E9C349]">
+          <div className="p-2.5 rounded-xl bg-[#D9A9FF]/15 border border-[#D9A9FF]/30 text-[#D9A9FF]">
             <Users className="w-5 h-5" />
           </div>
           <div>
             <h2 className="text-base font-black text-white tracking-wide uppercase flex items-center gap-2">
               Amigos & Compañeros de Waacking
-              <Sparkles className="w-4 h-4 text-[#E9C349]" />
+              <Sparkles className="w-4 h-4 text-[#D9A9FF]" />
             </h2>
             <p className="text-xs text-slate-400">
               Conecta, agrega bailarines e invítalos a Live Battles en tiempo real
@@ -169,7 +171,7 @@ export const FriendsSection: React.FC<FriendsSectionProps> = ({
             onClick={() => setActiveTab('friends')}
             className={`px-4 py-2.5 text-xs font-black uppercase tracking-wider rounded-t-xl transition-colors flex items-center gap-2 border-b-2 ${
               activeTab === 'friends'
-                ? 'border-[#E9C349] text-[#E9C349] bg-white/5'
+                ? 'border-[#D9A9FF] text-[#D9A9FF] bg-white/5'
                 : 'border-transparent text-slate-400 hover:text-white'
             }`}
           >
@@ -181,7 +183,7 @@ export const FriendsSection: React.FC<FriendsSectionProps> = ({
             onClick={() => setActiveTab('search')}
             className={`px-4 py-2.5 text-xs font-black uppercase tracking-wider rounded-t-xl transition-colors flex items-center gap-2 border-b-2 ${
               activeTab === 'search'
-                ? 'border-[#E9C349] text-[#E9C349] bg-white/5'
+                ? 'border-[#D9A9FF] text-[#D9A9FF] bg-white/5'
                 : 'border-transparent text-slate-400 hover:text-white'
             }`}
           >
@@ -193,7 +195,7 @@ export const FriendsSection: React.FC<FriendsSectionProps> = ({
             onClick={() => setActiveTab('requests')}
             className={`px-4 py-2.5 text-xs font-black uppercase tracking-wider rounded-t-xl transition-colors flex items-center gap-2 border-b-2 relative ${
               activeTab === 'requests'
-                ? 'border-[#E9C349] text-[#E9C349] bg-white/5'
+                ? 'border-[#D9A9FF] text-[#D9A9FF] bg-white/5'
                 : 'border-transparent text-slate-400 hover:text-white'
             }`}
           >
@@ -221,7 +223,7 @@ export const FriendsSection: React.FC<FriendsSectionProps> = ({
                   </p>
                   <button
                     onClick={() => setActiveTab('search')}
-                    className="mt-4 px-4 py-2 bg-[#E9C349] text-black font-extrabold text-xs rounded-xl uppercase hover:brightness-110 transition-all inline-flex items-center gap-2"
+                    className="mt-4 px-4 py-2 bg-[#D9A9FF] text-black font-extrabold text-xs rounded-xl uppercase hover:brightness-110 transition-all inline-flex items-center gap-2"
                   >
                     <Search className="w-3.5 h-3.5" /> Buscar Bailarines
                   </button>
@@ -235,7 +237,7 @@ export const FriendsSection: React.FC<FriendsSectionProps> = ({
                     return (
                       <div 
                         key={friend.id}
-                        className="p-3.5 bg-[#1a1818] border border-white/10 rounded-2xl flex items-center justify-between hover:border-[#E9C349]/40 transition-all group"
+                        className="p-3.5 bg-[#1a1818] border border-white/10 rounded-2xl flex items-center justify-between hover:border-[#D9A9FF]/40 transition-all group"
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <div className="relative shrink-0">
@@ -253,7 +255,7 @@ export const FriendsSection: React.FC<FriendsSectionProps> = ({
                           </div>
 
                           <div className="min-w-0">
-                            <h4 className="text-xs font-black text-white truncate group-hover:text-[#E9C349] transition-colors">
+                            <h4 className="text-xs font-black text-white truncate group-hover:text-[#D9A9FF] transition-colors">
                               {friend.displayName || friend.name}
                             </h4>
                             <p className="text-[10px] text-slate-400 font-mono truncate">
@@ -294,15 +296,26 @@ export const FriendsSection: React.FC<FriendsSectionProps> = ({
                           </div>
                         </div>
 
-                        <button
-                          onClick={() => handleInviteBattle(friend)}
-                          disabled={invitingFriendId === friend.id}
-                          className="px-3 py-1.5 bg-[#E9C349]/20 hover:bg-[#E9C349] text-[#E9C349] hover:text-black border border-[#E9C349]/40 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-1.5 shrink-0"
-                          title="Enviar invitación directa para Live Battle"
-                        >
-                          <Swords className="w-3.5 h-3.5" />
-                          {invitingFriendId === friend.id ? 'Invitando...' : 'Invitar'}
-                        </button>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            onClick={() => openDirectMessageWithUser(friend)}
+                            className="px-3 py-1.5 bg-[#252525] hover:bg-[#D9A9FF] text-gray-200 hover:text-black border border-white/10 hover:border-[#D9A9FF] rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                            title="Enviar mensaje directo"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            <span>Mensaje</span>
+                          </button>
+
+                          <button
+                            onClick={() => handleInviteBattle(friend)}
+                            disabled={invitingFriendId === friend.id}
+                            className="px-3 py-1.5 bg-[#D9A9FF]/20 hover:bg-[#D9A9FF] text-[#D9A9FF] hover:text-black border border-[#D9A9FF]/40 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-1.5 cursor-pointer"
+                            title="Enviar invitación directa para Live Battle"
+                          >
+                            <Swords className="w-3.5 h-3.5" />
+                            {invitingFriendId === friend.id ? 'Invitando...' : 'Invitar'}
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -321,7 +334,7 @@ export const FriendsSection: React.FC<FriendsSectionProps> = ({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Buscar por @username, nombre o ID (ej: monroe_waacking)..."
-                  className="w-full bg-[#1e1c1c] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#E9C349]"
+                  className="w-full bg-[#1e1c1c] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#D9A9FF]"
                 />
               </div>
 
@@ -361,9 +374,19 @@ export const FriendsSection: React.FC<FriendsSectionProps> = ({
                         </div>
 
                         {isAlreadyFriend ? (
-                          <span className="text-[10px] font-extrabold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-lg uppercase flex items-center gap-1">
-                            <UserCheck className="w-3 h-3" /> Amigo
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-extrabold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-lg uppercase flex items-center gap-1">
+                              <UserCheck className="w-3 h-3" /> Amigo
+                            </span>
+                            <button
+                              onClick={() => openDirectMessageWithUser(user)}
+                              className="px-2.5 py-1 bg-[#252525] hover:bg-[#D9A9FF] text-gray-200 hover:text-black border border-white/10 rounded-lg text-[10px] font-bold uppercase transition-all flex items-center gap-1 cursor-pointer"
+                              title="Enviar mensaje directo"
+                            >
+                              <MessageSquare className="w-3 h-3" />
+                              <span>Chat</span>
+                            </button>
+                          </div>
                         ) : isPendingSent ? (
                           <span className="text-[10px] font-extrabold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg uppercase flex items-center gap-1">
                             <Clock className="w-3 h-3" /> Solicitud Enviada
@@ -372,7 +395,7 @@ export const FriendsSection: React.FC<FriendsSectionProps> = ({
                           <button
                             onClick={() => handleSendRequest(user)}
                             disabled={sendingRequestTo === user.id}
-                            className="px-3 py-1.5 bg-[#E9C349] hover:bg-[#d6b13e] text-black font-extrabold text-[10px] rounded-lg uppercase transition-all flex items-center gap-1"
+                            className="px-3 py-1.5 bg-[#D9A9FF] hover:bg-[#BA7EFF] text-black font-extrabold text-[10px] rounded-lg uppercase transition-all flex items-center gap-1"
                           >
                             <UserPlus className="w-3 h-3" />
                             {sendingRequestTo === user.id ? 'Enviando...' : 'Agregar'}
@@ -468,7 +491,7 @@ function PendingRequestCard({
   }, [senderUid]);
 
   return (
-    <div className="p-3.5 bg-[#1a1818] border border-[#E9C349]/30 rounded-2xl flex items-center justify-between">
+    <div className="p-3.5 bg-[#1a1818] border border-[#D9A9FF]/30 rounded-2xl flex items-center justify-between">
       <div className="flex items-center gap-3">
         <img 
           src={profile?.avatar || profile?.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=120'} 

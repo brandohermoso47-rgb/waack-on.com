@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   DollarSign, 
@@ -45,13 +45,40 @@ import {
   Loader2,
   Wallet,
   Music,
+  Disc,
   ListTodo,
   Mail,
   HardDrive,
-  Zap
+  Zap,
+  FileText,
+  Download,
+  Printer,
+  FileType,
+  Filter,
+  LayoutDashboard,
+  UserCheck,
+  Play,
+  Pause,
+  Timer,
+  Volume2,
+  ClipboardCheck,
+  Search,
+  Share2,
+  Copy,
+  BookOpenCheck,
+  Sliders,
+  RotateCcw,
+  MessageSquare,
+  Eye,
+  Clock,
+  Flame,
+  Activity,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import { User, CalendarEvent, Lesson, PodcastShow, PodcastEpisode } from '../types';
-import { INITIAL_PODCASTS } from '../data';
+import { INITIAL_PODCAST_SHOWS } from '../data';
+import { StudioVibeCard } from './DiscoBallWidget';
 import { Language } from '../lib/translations';
 import { generateGoogleMeetRoomUrl } from '../googleCalendar';
 import { fetchInstructorMetrics, createInstructorTask, generateOnboardingPlanBackend, updateInstructorPricingMethodologyBackend } from '../lib/api';
@@ -60,6 +87,7 @@ import OnboardingPlanViewer from './OnboardingPlanViewer';
 import TeachingMethodologyEditor from './TeachingMethodologyEditor';
 import { InstructorFinanceView } from './InstructorFinanceView';
 import SoundCloudPlayer from './SoundCloudPlayer';
+import MultiSourcePlayer, { parseMusicSource } from './MultiSourcePlayer';
 import PodcastUploaderModal from './PodcastUploaderModal';
 import MetronomeLabComponent from './MetronomeLabComponent';
 import ClassroomView from './ClassroomView';
@@ -68,6 +96,8 @@ import { GmailWidget } from './GmailWidget';
 import { GooglePickerModal } from './GooglePickerModal';
 import GoogleSlidesView from './GoogleSlidesView';
 import Logo from './Logo';
+
+import InstructorPlaylistsManager from './instructor/InstructorPlaylistsManager';
 
 interface InstructorViewProps {
   currentUser: User;
@@ -78,6 +108,21 @@ interface InstructorViewProps {
   setActiveTab?: (tab: string) => void;
   lessons?: Lesson[];
   initialSubTab?: string;
+  onOpenDocsModal?: () => void;
+}
+
+export interface InstructorDocument {
+  id: string;
+  title: string;
+  category: 'guia_pdf' | 'planificacion_bpm';
+  categoryLabel: string;
+  format: string;
+  description: string;
+  fileUrl: string;
+  fileName?: string;
+  createdAt: string;
+  downloadsCount: number;
+  authorName?: string;
 }
 
 interface PublishedItem {
@@ -407,61 +452,34 @@ const INITIAL_TRANSACTIONS: InstructorTransaction[] = [
   }
 ];
 
-// Metallic Disco Ball Graphic Component with animated facets and radial glint rays
-function DiscoBall() {
-  return (
-    <div className="relative flex flex-col items-center justify-center h-full min-h-[200px] w-full group select-none py-2">
-      {/* Background Radial Light Aura */}
-      <div className="absolute w-48 h-48 bg-gradient-to-r from-purple-600/30 via-pink-500/20 to-blue-500/30 rounded-full blur-3xl animate-pulse pointer-events-none" />
-      
-      {/* Hanging Cord */}
-      <div className="w-[2px] h-8 bg-gradient-to-b from-white/90 via-slate-300 to-slate-500 shadow-[0_0_8px_rgba(255,255,255,0.8)] z-10" />
-
-      {/* Sphere Container */}
-      <div className="relative w-32 h-32 sm:w-36 sm:h-36 rounded-full shadow-[0_0_40px_rgba(220,200,255,0.5),inset_-8px_-8px_24px_rgba(0,0,0,0.8),inset_8px_8px_24px_rgba(255,255,255,0.8)] border border-white/40 overflow-hidden bg-slate-900 z-10 flex items-center justify-center">
-        {/* Animated Metallic Mirror Tiles Grid Pattern */}
-        <svg className="w-full h-full opacity-90 transition-transform duration-700 group-hover:scale-105" viewBox="0 0 100 100">
-          <defs>
-            <radialGradient id="discoGrad" cx="35%" cy="30%" r="65%">
-              <stop offset="0%" stopColor="#ffffff" />
-              <stop offset="25%" stopColor="#e2e8f0" />
-              <stop offset="55%" stopColor="#94a3b8" />
-              <stop offset="85%" stopColor="#334155" />
-              <stop offset="100%" stopColor="#0f172a" />
-            </radialGradient>
-            <pattern id="mirrorTiles" width="8" height="8" patternUnits="userSpaceOnUse">
-              <rect x="0.5" y="0.5" width="7" height="7" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="0.5" />
-              <rect x="1" y="1" width="6" height="6" fill="rgba(255,255,255,0.15)" />
-            </pattern>
-          </defs>
-          <circle cx="50" cy="50" r="48" fill="url(#discoGrad)" />
-          <circle cx="50" cy="50" r="48" fill="url(#mirrorTiles)" />
-          
-          {/* Latitude Curved Grid Lines */}
-          <ellipse cx="50" cy="50" rx="48" ry="12" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.5" />
-          <ellipse cx="50" cy="50" rx="48" ry="28" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.5" />
-          <ellipse cx="50" cy="50" rx="48" ry="40" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.5" />
-          
-          {/* Specular Highlight Arc */}
-          <path d="M 20 20 A 40 40 0 0 1 80 20" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="3" strokeLinecap="round" filter="blur(1px)" />
-        </svg>
-
-        {/* Sparkling Stars Glint Overlay */}
-        <div className="absolute inset-0 pointer-events-none">
-          <Sparkles className="absolute top-4 left-5 w-4 h-4 text-white animate-spin" style={{ animationDuration: '4s' }} />
-          <Sparkles className="absolute top-8 right-4 w-3.5 h-3.5 text-purple-200 animate-ping" />
-          <Sparkles className="absolute bottom-5 left-8 w-3.5 h-3.5 text-pink-200 animate-pulse" />
-          <Sparkles className="absolute bottom-8 right-6 w-4 h-4 text-amber-200 animate-bounce" />
-        </div>
-      </div>
-
-      {/* Rotating Light Rays */}
-      <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-        <div className="w-48 h-48 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-white/20 via-pink-500/10 to-transparent rounded-full blur-xl animate-spin" style={{ animationDuration: '12s' }} />
-      </div>
-    </div>
-  );
-}
+const INITIAL_INSTRUCTOR_DOCUMENTS: InstructorDocument[] = [
+  {
+    id: 'doc-biomecanica-1',
+    title: 'Cuaderno de Práctica Biomecánica para prevención de lesiones de hombro y codo',
+    category: 'guia_pdf',
+    categoryLabel: 'Guía y Manual de Técnica en PDF',
+    format: 'PDF - 18 Páginas (Biomecánica & Anatomía)',
+    description: 'Guía técnica e ilustrada para la prevención de sobrecarga en hombros y codos en Waacking. Incluye gráficos de alineación articular, rotación de escápula y ejercicios de calentamiento biomecánico.',
+    fileUrl: 'https://waackon.app/docs/Cuaderno_Practica_Biomecanica_Prevencion_Lesiones.pdf',
+    fileName: 'Cuaderno_Practica_Biomecanica_Prevencion_Lesiones.pdf',
+    createdAt: '2026-08-07',
+    downloadsCount: 54,
+    authorName: 'Docente Waack On'
+  },
+  {
+    id: 'doc-planificacion-bpm-2',
+    title: 'Planificación Semanal de Entrenamiento BPM & Drills (Plantilla Imprimible & Digital)',
+    category: 'planificacion_bpm',
+    categoryLabel: 'Planificación de Entrenamiento / Rutina BPM',
+    format: 'Plantilla Imprimible / Digital (PDF & Doc)',
+    description: 'Plantilla interactiva diseñada para que las alumnas registren sus rutinas de BPM semanales, metas de incremento de tempo en Arms Control, minutos de práctica en metrónomo y diario de fatiga muscular.',
+    fileUrl: 'https://waackon.app/docs/Planificacion_Semanal_Entrenamiento_BPM_Imprimible.pdf',
+    fileName: 'Planificacion_Semanal_Entrenamiento_BPM_Imprimible.pdf',
+    createdAt: '2026-08-07',
+    downloadsCount: 92,
+    authorName: 'Docente Waack On'
+  }
+];
 
 export default function InstructorView({
   currentUser,
@@ -471,22 +489,101 @@ export default function InstructorView({
   language,
   setActiveTab,
   lessons = [],
-  initialSubTab = 'dashboard'
+  initialSubTab = 'dashboard',
+  onOpenDocsModal
 }: InstructorViewProps) {
   const [activeSubTab, setActiveSubTab] = useState<
-    'dashboard' | 'finances' | 'overview' | 'publish' | 'students' | 'classes' | 'promotion' | 'methodology' | 'soundcloud' | 'podcasts' | 'workspace_classroom' | 'workspace_tasks' | 'workspace_gmail' | 'workspace_drive'
+    'dashboard' | 'finances' | 'overview' | 'publish' | 'documents' | 'students' | 'classes' | 'promotion' | 'methodology' | 'soundcloud' | 'podcasts' | 'workspace_classroom' | 'workspace_tasks' | 'workspace_gmail' | 'workspace_drive'
   >((initialSubTab as any) || 'dashboard');
 
   // Google Workspace Integrated Modal Tool State
   const [activeWorkspaceModal, setActiveWorkspaceModal] = useState<'classroom' | 'tasks' | 'gmail' | 'drive' | 'slides' | null>(null);
 
+  // Instructor Documents & PDF Guides State
+  const [instructorDocuments, setInstructorDocuments] = useState<InstructorDocument[]>(() => {
+    try {
+      const saved = localStorage.getItem('waack_instructor_documents');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return INITIAL_INSTRUCTOR_DOCUMENTS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('waack_instructor_documents', JSON.stringify(instructorDocuments));
+  }, [instructorDocuments]);
+
+  // Form state for creating new PDF document
+  const [docTitle, setDocTitle] = useState('');
+  const [docCategory, setDocCategory] = useState<'guia_pdf' | 'planificacion_bpm'>('guia_pdf');
+  const [docFormat, setDocFormat] = useState('PDF - Guía Técnica');
+  const [docDescription, setDocDescription] = useState('');
+  const [docFileUrl, setDocFileUrl] = useState('');
+  const [docFileName, setDocFileName] = useState('');
+  const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+
+  const handleFileUploadPDF = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingDoc(true);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      setDocFileUrl(result);
+      setDocFileName(file.name);
+      if (!docTitle) {
+        setDocTitle(file.name.replace(/\.[^/.]+$/, ""));
+      }
+      setIsUploadingDoc(false);
+      playChime('click');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handlePublishDocument = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!docTitle.trim()) return;
+    const newDoc: InstructorDocument = {
+      id: `doc-${Date.now()}`,
+      title: docTitle.trim(),
+      category: docCategory,
+      categoryLabel: docCategory === 'guia_pdf' ? 'Guía y Manual de Técnica en PDF' : 'Planificación de Entrenamiento / Rutinas BPM',
+      format: docFormat || (docCategory === 'guia_pdf' ? 'PDF - Documento Técnico' : 'Plantilla Imprimible'),
+      description: docDescription.trim() || 'Documento oficial subido para el alumnado de la academia.',
+      fileUrl: docFileUrl || 'https://waackon.app/docs/Material_Oficial_WaackOn.pdf',
+      fileName: docFileName || `${docTitle.toLowerCase().replace(/\s+/g, '_')}.pdf`,
+      createdAt: new Date().toISOString().split('T')[0],
+      downloadsCount: 0,
+      authorName: currentUser.name || 'Docente Waack On'
+    };
+    setInstructorDocuments(prev => [newDoc, ...prev]);
+    setDocTitle('');
+    setDocDescription('');
+    setDocFileUrl('');
+    setDocFileName('');
+    playChime('success');
+    setAlertText('¡Documento publicado exitosamente en el panel de alumnas!');
+    setTimeout(() => setAlertText(null), 3500);
+  };
+
+  const handleDeleteDocument = (id: string) => {
+    setInstructorDocuments(prev => prev.filter(d => d.id !== id));
+    playChime('click');
+    setAlertText('Documento eliminado.');
+    setTimeout(() => setAlertText(null), 2500);
+  };
+
   // Instructor Podcasts State & Persistence
   const [instructorPodcasts, setInstructorPodcasts] = useState<PodcastShow[]>(() => {
     try {
       const saved = localStorage.getItem('waack_instructor_podcasts');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]?.episodes !== undefined) {
+          return parsed;
+        }
+      }
     } catch (e) {}
-    return INITIAL_PODCASTS;
+    return INITIAL_PODCAST_SHOWS;
   });
 
   const [isPodcastModalOpen, setIsPodcastModalOpen] = useState(false);
@@ -571,6 +668,45 @@ export default function InstructorView({
     return saved ? JSON.parse(saved) : INITIAL_MOCK_STUDENTS;
   });
 
+  // Local state to maintain the selected/filtered student UID across dashboard tabs
+  const [selectedStudentUid, setSelectedStudentUid] = useState<string | null>(() => {
+    try {
+      return sessionStorage.getItem('waack_inst_selected_student_uid') || null;
+    } catch (e) {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      if (selectedStudentUid) {
+        sessionStorage.setItem('waack_inst_selected_student_uid', selectedStudentUid);
+      } else {
+        sessionStorage.removeItem('waack_inst_selected_student_uid');
+      }
+    } catch (e) {}
+  }, [selectedStudentUid]);
+
+  const selectedStudent = useMemo(() => {
+    if (!selectedStudentUid) return null;
+    return (students || []).find(s => s.id === selectedStudentUid || (s as any).uid === selectedStudentUid) || null;
+  }, [students, selectedStudentUid]);
+
+  const handleSelectStudentForFilter = (studentId: string | null) => {
+    setSelectedStudentUid(studentId);
+    playChime('click');
+    if (studentId) {
+      const found = students.find(s => s.id === studentId);
+      if (found) {
+        setAlertText(`Filtro activo: ${found.name} (UID: ${found.id})`);
+        setTimeout(() => setAlertText(null), 3000);
+      }
+    } else {
+      setAlertText('Filtro de alumno desactivado (Mostrando todos).');
+      setTimeout(() => setAlertText(null), 2500);
+    }
+  };
+
   // State alerts
   const [alertText, setAlertText] = useState<string | null>(null);
 
@@ -591,11 +727,195 @@ export default function InstructorView({
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
 
   // Form State for scheduling a class event
+  const [classPanelSubTab, setClassPanelSubTab] = useState<'schedule' | 'curriculum' | 'live_control' | 'submissions'>('schedule');
   const [classTitle, setClassTitle] = useState('');
   const [classDate, setClassDate] = useState('');
   const [classTime, setClassTime] = useState('');
-  const [classDuration, setClassDuration] = useState('');
+  const [classDuration, setClassDuration] = useState('90 min');
   const [classMeet, setClassMeet] = useState('');
+  const [classMusicUrl, setClassMusicUrl] = useState('');
+  const [classBpm, setClassBpm] = useState<number | ''>(128);
+  const [classEventType, setClassEventType] = useState<'Masterclass Magistral' | 'Taller Intensivo de Técnica' | 'Sesión 1-a-1 de Corrección' | 'Laboratorio de Freestyle'>('Taller Intensivo de Técnica');
+  const [classTargetAudience, setClassTargetAudience] = useState<'all' | 'selected_only' | 'level_specific'>('all');
+  const [classTargetLevel, setClassTargetLevel] = useState<'all' | 'Principiante' | 'Intermedio' | 'Avanzado'>('all');
+  const [classNotes, setClassNotes] = useState('');
+
+  // Attendance Sheet Modal / State for scheduled classes
+  const [attendanceModalEvent, setAttendanceModalEvent] = useState<any | null>(null);
+  const [attendanceRecords, setAttendanceRecords] = useState<Record<string, Record<string, 'present' | 'absent' | 'late'>>>(() => {
+    try {
+      const saved = localStorage.getItem('waack_inst_attendance_records');
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('waack_inst_attendance_records', JSON.stringify(attendanceRecords));
+    } catch (e) {}
+  }, [attendanceRecords]);
+
+  // Live Control Room & Metronome & Round Timer State
+  const [liveMetronomeActive, setLiveMetronomeActive] = useState(false);
+  const [liveMetronomeBpm, setLiveMetronomeBpm] = useState(124);
+  const [liveMetronomeBeat, setLiveMetronomeBeat] = useState(1);
+  const [liveRoundTimerSeconds, setLiveRoundTimerSeconds] = useState(60);
+  const [liveRoundInitialTime, setLiveRoundInitialTime] = useState(60);
+  const [liveRoundTimerRunning, setLiveRoundTimerRunning] = useState(false);
+  const [liveTeacherNotes, setLiveTeacherNotes] = useState(() => {
+    return localStorage.getItem('waack_inst_live_teacher_notes') || "Observaciones de la Cátedra:\n- Sofía: Mejorar la extensión de codo en compás 4.\n- Carlos: Excelente velocidad en roll; mantener la mirada erguida al público.\n- Yuki: Mantener ritmo a 128 BPM en posing sincopado.";
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('waack_inst_live_teacher_notes', liveTeacherNotes);
+    } catch (e) {}
+  }, [liveTeacherNotes]);
+
+  // Metronome beat interval
+  useEffect(() => {
+    if (!liveMetronomeActive) return;
+    const intervalMs = (60 / liveMetronomeBpm) * 1000;
+    const intervalId = setInterval(() => {
+      setLiveMetronomeBeat(prev => (prev % 8) + 1);
+      // Play audio click
+      try {
+        if (!audioCtxRef.current) {
+          audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        }
+        const ctx = audioCtxRef.current;
+        if (ctx.state === 'suspended') ctx.resume();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        // Accent on beat 1 and beat 5
+        const isAccent = (liveMetronomeBeat === 1 || liveMetronomeBeat === 5);
+        osc.frequency.setValueAtTime(isAccent ? 880 : 440, ctx.currentTime);
+        gain.gain.setValueAtTime(isAccent ? 0.1 : 0.04, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.05);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.05);
+      } catch (e) {}
+    }, intervalMs);
+
+    return () => clearInterval(intervalId);
+  }, [liveMetronomeActive, liveMetronomeBpm, liveMetronomeBeat]);
+
+  // Live round timer interval
+  useEffect(() => {
+    if (!liveRoundTimerRunning) return;
+    const timerId = setInterval(() => {
+      setLiveRoundTimerSeconds(prev => {
+        if (prev <= 1) {
+          setLiveRoundTimerRunning(false);
+          playChime('cash');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timerId);
+  }, [liveRoundTimerRunning]);
+
+  // Curriculum Management State
+  const [curriculumSearchQuery, setCurriculumSearchQuery] = useState('');
+  const [curriculumLevelFilter, setCurriculumLevelFilter] = useState<'all' | 'Principiante' | 'Intermedio' | 'Avanzado'>('all');
+  const [curriculumAssignedMap, setCurriculumAssignedMap] = useState<Record<string, string[]>>(() => {
+    try {
+      const saved = localStorage.getItem('waack_inst_curriculum_assigned');
+      return saved ? JSON.parse(saved) : {
+        '1': ['st-101', 'st-102', 'st-103'],
+        '2': ['st-101', 'st-102'],
+        '3': ['st-101']
+      };
+    } catch (e) {
+      return {};
+    }
+  });
+
+  const [curriculumApprovedMap, setCurriculumApprovedMap] = useState<Record<string, string[]>>(() => {
+    try {
+      const saved = localStorage.getItem('waack_inst_curriculum_approved');
+      return saved ? JSON.parse(saved) : {
+        '1': ['st-101']
+      };
+    } catch (e) {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('waack_inst_curriculum_assigned', JSON.stringify(curriculumAssignedMap));
+      localStorage.setItem('waack_inst_curriculum_approved', JSON.stringify(curriculumApprovedMap));
+    } catch (e) {}
+  }, [curriculumAssignedMap, curriculumApprovedMap]);
+
+  // Student Submissions & Technical Homework State
+  const [studentSubmissions, setStudentSubmissions] = useState<Array<{
+    id: string;
+    studentId: string;
+    studentName: string;
+    lessonTitle: string;
+    submittedAt: string;
+    videoUrl: string;
+    status: 'pending' | 'graded';
+    score?: number;
+    feedback?: string;
+  }>>(() => {
+    try {
+      const saved = localStorage.getItem('waack_inst_submissions');
+      return saved ? JSON.parse(saved) : [
+        {
+          id: 'sub-1',
+          studentId: 'st-101',
+          studentName: 'Ana "Waack Queen"',
+          lessonTitle: 'Fundamentos de Geometría Braquial & Rolls',
+          submittedAt: 'Hoy, 12:45',
+          videoUrl: 'https://images.unsplash.com/photo-1518834107812-67b0b7c58434?auto=format&fit=crop&q=80&w=600',
+          status: 'pending'
+        },
+        {
+          id: 'sub-2',
+          studentId: 'st-102',
+          studentName: 'Ji-Won Kim',
+          lessonTitle: 'Pose Diva & Líneas de Hombro 70s',
+          submittedAt: 'Ayer, 18:20',
+          videoUrl: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&q=80&w=600',
+          status: 'pending'
+        }
+      ];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('waack_inst_submissions', JSON.stringify(studentSubmissions));
+    } catch (e) {}
+  }, [studentSubmissions]);
+
+  // Feedback modal or editing submission
+  const [gradingSubmission, setGradingSubmission] = useState<{
+    submission: any;
+    score: number;
+    feedback: string;
+  } | null>(null);
+
+  // New Lesson Direct Creation Modal
+  const [showAddLessonModal, setShowAddLessonModal] = useState(false);
+  const [newLessonTitle, setNewLessonTitle] = useState('');
+  const [newLessonCategory, setNewLessonCategory] = useState('Arms & Hands Control');
+  const [newLessonLevel, setNewLessonLevel] = useState<'Principiante' | 'Intermedio' | 'Avanzado'>('Intermedio');
+  const [newLessonDuration, setNewLessonDuration] = useState('15 min');
+  const [newLessonBpm, setNewLessonBpm] = useState(128);
+  const [newLessonVideoUrl, setNewLessonVideoUrl] = useState('');
+  const [newLessonDescription, setNewLessonDescription] = useState('');
 
   // Expediente / Profile Dossier State (Left Panel)
   const [dossierRealName, setDossierRealName] = useState(() => localStorage.getItem('waack_inst_realname') || currentUser.name || "Jessica Soner");
@@ -1187,26 +1507,139 @@ Semana 3-4 (Progresión):
     playChime('success');
 
     const finalMeetUrl = classMeet.trim() || generateGoogleMeetRoomUrl(classTitle + classDate);
+    const musicSource = classMusicUrl.trim() 
+      ? parseMusicSource(classMusicUrl.trim(), classTitle, typeof classBpm === 'number' ? classBpm : 128)
+      : undefined;
+
+    const fullTitle = `[${classEventType}] ${classTitle}${selectedStudent && classTargetAudience === 'selected_only' ? ` (Exclusivo: ${selectedStudent.name})` : ''}`;
 
     // Add to main App state via onAddEvent
     onAddEvent({
-      title: `[Taller] ${classTitle}`,
+      title: fullTitle,
       date: classDate,
       time: classTime,
-      duration: classDuration || '60 min',
+      duration: classDuration || '90 min',
       instructor: currentUser.name,
-      description: language === 'es' ? `Taller interactivo en directo impartido por ${currentUser.name}. Sala oficial de Google Meet disponible.` : `Live session taught by ${currentUser.name}. Official Google Meet room available.`,
-      meetUrl: finalMeetUrl
+      description: classNotes.trim() 
+        ? `${classNotes.trim()} • Impartido por ${currentUser.name}. Sala oficial disponible.`
+        : (language === 'es' ? `Sesión interactiva impartida por ${currentUser.name}. Enlace oficial disponible.` : `Live session taught by ${currentUser.name}.`),
+      meetUrl: finalMeetUrl,
+      ...(musicSource ? { musicSource } : {})
     });
 
     setClassTitle('');
     setClassDate('');
     setClassTime('');
-    setClassDuration('');
+    setClassDuration('90 min');
     setClassMeet('');
+    setClassMusicUrl('');
+    setClassBpm(128);
+    setClassNotes('');
 
-    setAlertText(language === 'es' ? "¡Clase programada con Google Meet generado automáticamente!" : "Class scheduled with Google Meet auto-generated!");
+    setAlertText(language === 'es' ? "¡Clase programada e inyectada en la agenda del profesor!" : "Class scheduled and injected into instructor agenda!");
     setTimeout(() => setAlertText(null), 4000);
+  };
+
+  // Helper to toggle attendance status for a student in a class
+  const handleSetStudentAttendance = (eventId: string, studentId: string, status: 'present' | 'absent' | 'late') => {
+    playChime('click');
+    setAttendanceRecords(prev => {
+      const eventAttendance = prev[eventId] || {};
+      return {
+        ...prev,
+        [eventId]: {
+          ...eventAttendance,
+          [studentId]: status
+        }
+      };
+    });
+  };
+
+  // Copy class meeting link
+  const handleCopyClassLink = (meetUrl: string, title: string) => {
+    navigator.clipboard.writeText(meetUrl);
+    playChime('click');
+    setAlertText(`¡Enlace copiado al portapapeles para "${title}"!`);
+    setTimeout(() => setAlertText(null), 3000);
+  };
+
+  // Toggle assign lesson to student
+  const handleToggleAssignLesson = (lessonId: string, studentId: string) => {
+    playChime('click');
+    setCurriculumAssignedMap(prev => {
+      const currentList = prev[lessonId] || [];
+      const exists = currentList.includes(studentId);
+      const updated = exists ? currentList.filter(id => id !== studentId) : [...currentList, studentId];
+      return {
+        ...prev,
+        [lessonId]: updated
+      };
+    });
+    const studentObj = students.find(s => s.id === studentId);
+    setAlertText(`Asignación actualizada para ${studentObj ? studentObj.name : 'alumno'}.`);
+    setTimeout(() => setAlertText(null), 2500);
+  };
+
+  // Toggle approve lesson for student
+  const handleToggleApproveLesson = (lessonId: string, studentId: string) => {
+    playChime('success');
+    setCurriculumApprovedMap(prev => {
+      const currentList = prev[lessonId] || [];
+      const exists = currentList.includes(studentId);
+      const updated = exists ? currentList.filter(id => id !== studentId) : [...currentList, studentId];
+      return {
+        ...prev,
+        [lessonId]: updated
+      };
+    });
+    const studentObj = students.find(s => s.id === studentId);
+    setAlertText(`¡Validación pedagógica registrada para ${studentObj ? studentObj.name : 'alumno'}!`);
+    setTimeout(() => setAlertText(null), 2500);
+  };
+
+  // Assign lesson to all enrolled students
+  const handleAssignLessonToAll = (lessonId: string) => {
+    playChime('success');
+    const allIds = students.map(s => s.id);
+    setCurriculumAssignedMap(prev => ({
+      ...prev,
+      [lessonId]: allIds
+    }));
+    setAlertText(`¡Lección asignada a todos los ${students.length} alumnos de la cátedra!`);
+    setTimeout(() => setAlertText(null), 3000);
+  };
+
+  // Grade student submission
+  const handleGradeSubmission = (submissionId: string, score: number, feedback: string) => {
+    playChime('success');
+    setStudentSubmissions(prev => prev.map(sub => {
+      if (sub.id === submissionId) {
+        return {
+          ...sub,
+          status: 'graded',
+          score,
+          feedback
+        };
+      }
+      return sub;
+    }));
+    setGradingSubmission(null);
+    setAlertText(`¡Evaluación y corrección técnica guardadas exitosamente (${score}/100)!`);
+    setTimeout(() => setAlertText(null), 3500);
+  };
+
+  // Timer round helpers
+  const handleStartRoundTimer = (seconds: number) => {
+    playChime('click');
+    setLiveRoundInitialTime(seconds);
+    setLiveRoundTimerSeconds(seconds);
+    setLiveRoundTimerRunning(true);
+  };
+
+  const handleResetRoundTimer = () => {
+    playChime('click');
+    setLiveRoundTimerRunning(false);
+    setLiveRoundTimerSeconds(liveRoundInitialTime);
   };
 
   const handleDeleteItem = (id: string) => {
@@ -1232,11 +1665,11 @@ Semana 3-4 (Progresión):
           transition={{ duration: 0.5 }}
           className="max-w-xl w-full bg-[#121212]/90 border border-white/10 rounded-[28px] p-6 sm:p-10 shadow-2xl relative overflow-hidden text-center"
         >
-          <div className="absolute -top-10 -right-10 w-40 h-40 bg-[#E9C349]/10 rounded-full blur-3xl" />
-          <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-[#9A2B3C]/10 rounded-full blur-3xl" />
+          <div className="absolute -top-10 -right-10 w-40 h-40 bg-[#D9A9FF]/10 rounded-full blur-3xl" />
+          <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-[#C23E9E]/10 rounded-full blur-3xl" />
 
-          <div className="w-20 h-20 bg-white/5 border border-[#E9C349]/40 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-[0_0_30px_rgba(233,195,73,0.1)]">
-            <Award className="w-10 h-10 text-[#E9C349] animate-pulse" />
+          <div className="w-20 h-20 bg-white/5 border border-[#D9A9FF]/40 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-[0_0_30px_rgba(217, 169, 255,0.1)]">
+            <Award className="w-10 h-10 text-[#D9A9FF] animate-pulse" />
           </div>
 
           <h3 className="text-2xl sm:text-3xl font-serif-elegant font-black tracking-tight text-[#EDEFF4] mb-4">
@@ -1251,7 +1684,7 @@ Semana 3-4 (Progresión):
             <button
               id="enable-instructor-btn"
               onClick={handleBecomeInstructor}
-              className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-[#E9C349] hover:bg-[#ffdf6b] text-black font-black text-sm tracking-wide transition-all shadow-lg shadow-[#E9C349]/10 active:scale-95"
+              className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-[#D9A9FF] hover:bg-[#F2CFFF] text-black font-black text-sm tracking-wide transition-all shadow-lg shadow-[#D9A9FF]/10 active:scale-95"
             >
               {t.becomeBtn}
             </button>
@@ -1261,48 +1694,39 @@ Semana 3-4 (Progresión):
     );
   }
 
+  const subTabTitles: Record<string, string> = {
+    dashboard: language === 'es' ? 'Dashboard de Docente' : 'Instructor Dashboard',
+    finances: language === 'es' ? 'Gestión de Finanzas (80/20)' : 'Instructor Finances (80/20)',
+    overview: language === 'es' ? 'Resumen & Notificaciones' : 'Overview & Notifications',
+    publish: language === 'es' ? 'Cursos, Talleres & Publicaciones' : 'Courses, Workshops & Content',
+    documents: language === 'es' ? 'Documentos & Guías PDF' : 'PDF Guides & Documents',
+    students: language === 'es' ? 'Alumnos & Seguimiento' : 'Student Roster & Tracking',
+    classes: language === 'es' ? 'Clases & Directos (Google Meet)' : 'Classes & Live (Google Meet)',
+    promotion: language === 'es' ? 'Ajustes & Destacados' : 'Settings & Promotion',
+    methodology: language === 'es' ? 'Metodología & Freestyle Lab' : 'Methodology & Lab',
+    podcasts: 'Podcasts de Cátedra',
+    soundcloud: language === 'es' ? 'Listas de Reproducción & Nube' : 'Instructor Playlists & Cloud'
+  };
+
   return (
-    <div className="flex-1 overflow-y-auto bg-[#07050e] text-slate-200 relative flex flex-col items-center min-h-full p-3 sm:p-6">
-      
+    <div className="flex-1 min-h-full w-full bg-[#07050e] text-slate-200 relative flex flex-col items-center p-3 sm:p-6">
       {/* Main Glass Dashboard Shell */}
-      <div className="w-full bg-[#120f20]/90 border border-white/10 rounded-[28px] shadow-[0_20px_60px_rgba(0,0,0,0.8),0_0_40px_rgba(147,51,234,0.15)] backdrop-blur-xl flex flex-col md:flex-row overflow-hidden relative min-h-[680px]">
+      <div className="w-full bg-[#120f20]/90 border border-white/10 rounded-[28px] shadow-[0_20px_60px_rgba(0,0,0,0.8),0_0_40px_rgba(147,51,234,0.15)] backdrop-blur-xl flex flex-col overflow-hidden relative min-h-[680px]">
         
-        {/* Left Navigation Sidebar */}
-        <div className="w-full md:w-60 bg-[#0e0c18] border-r border-white/10 p-4 flex flex-col justify-between shrink-0 space-y-6">
-          <div className="space-y-6">
-            
-            {/* Instructor Profile Card */}
-            <div className="flex items-center justify-between p-2.5 rounded-2xl bg-white/5 border border-white/10 group hover:border-pink-500/40 transition-all">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="relative shrink-0">
-                  <img 
-                    src={dossierAvatar || currentUser.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'} 
-                    alt="Instructor" 
-                    className="w-10 h-10 rounded-full object-cover border-2 border-pink-500/80 shadow-md" 
-                  />
-                  <label 
-                    className="absolute -bottom-1 -right-1 bg-pink-600 hover:bg-pink-500 text-white p-1 rounded-full cursor-pointer shadow-md transition-all hover:scale-110 z-10"
-                    title="Cambiar Foto de Perfil"
-                  >
-                    <Edit3 className="w-2.5 h-2.5" />
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleInstructorAvatarUpload}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-                <div className="min-w-0">
-                  <h4 className="text-xs font-bold text-white truncate">{dossierRealName || currentUser.name || 'Jassy Soner'}</h4>
-                  <p className="text-[10px] font-mono text-pink-400 font-semibold truncate">@{dossierAkaName || 'jassywaack'}</p>
-                </div>
-              </div>
+        {/* Unified Top Header Bar */}
+        <div className="p-4 sm:p-5 border-b border-white/10 bg-[#0e0c18]/80 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="relative shrink-0">
+              <img 
+                src={dossierAvatar || currentUser.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'} 
+                alt="Instructor" 
+                className="w-11 h-11 rounded-2xl object-cover border-2 border-pink-500/80 shadow-md" 
+              />
               <label 
-                className="p-1.5 bg-white/5 hover:bg-pink-500/20 text-slate-300 hover:text-pink-400 rounded-lg cursor-pointer transition-all shrink-0"
-                title="Subir foto desde archivo"
+                className="absolute -bottom-1 -right-1 bg-pink-600 hover:bg-pink-500 text-white p-1 rounded-full cursor-pointer shadow-md transition-all hover:scale-110 z-10"
+                title="Cambiar Foto de Perfil"
               >
-                <Upload className="w-3.5 h-3.5" />
+                <Edit3 className="w-2.5 h-2.5" />
                 <input
                   type="file"
                   accept="image/*"
@@ -1311,147 +1735,202 @@ Semana 3-4 (Progresión):
                 />
               </label>
             </div>
-
-            {/* RBAC Security & Backend Status Badge */}
-            <div className="px-3 py-2 rounded-xl bg-purple-950/40 border border-purple-500/30 flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-              <div className="min-w-0">
-                <div className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider flex items-center gap-1">
-                  RBAC Backend
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base sm:text-lg font-black text-white tracking-tight truncate">
+                  {subTabTitles[activeSubTab] || 'Panel de Instructor'}
+                </h2>
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-pink-500/20 border border-pink-500/40 text-pink-300 shrink-0">
+                  DOCENTE
+                </span>
+              </div>
+              <p className="text-[11px] font-mono text-slate-400 font-semibold truncate flex items-center gap-2 mt-0.5">
+                <span>{dossierRealName || currentUser.name || 'Jassy Soner'}</span>
+                <span className="text-pink-400">@{dossierAkaName || 'jassywaack'}</span>
+                <span className="text-emerald-400 flex items-center gap-1 text-[9px]">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                </div>
-                <div className="text-[9px] text-slate-300 truncate font-mono">{rbacDetail}</div>
-              </div>
+                  {rbacDetail}
+                </span>
+              </p>
             </div>
-
-            {/* Sidebar Navigation Items */}
-            <nav className="space-y-4">
-              <div>
-                <div className="text-[10px] font-mono font-bold text-slate-400 uppercase px-3 pb-1.5 tracking-wider">
-                  {language === 'es' ? 'Panel de Instructor' : 'Instructor Panel'}
-                </div>
-                <div className="space-y-1">
-                  {[
-                    { id: 'dashboard', label: 'Dashboard', icon: Layers, badge: null },
-                    { id: 'finances', label: language === 'es' ? 'Finanzas (80/20)' : 'Finances (80/20)', icon: Wallet, badge: '80/20' },
-                    { id: 'publish', label: language === 'es' ? 'Cursos & Publicaciones' : 'Courses & Content', icon: PlusCircle, badge: null },
-                    { id: 'students', label: language === 'es' ? 'Alumnos & Seguimiento' : 'Student Roster', icon: Users, badge: `${students.length}` },
-                    { id: 'classes', label: language === 'es' ? 'Clases & Directos' : 'Classes / Live', icon: Calendar, badge: null },
-                    { id: 'promotion', label: language === 'es' ? 'Ajustes & Destacados' : 'Settings & Promo', icon: Settings, badge: null }
-                  ].map(item => {
-                    const Icon = item.icon;
-                    const active = activeSubTab === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => {
-                          playChime('click');
-                          setActiveSubTab(item.id as any);
-                        }}
-                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
-                          active
-                            ? 'bg-gradient-to-r from-purple-900/60 to-pink-900/40 text-white border border-pink-500/40 shadow-lg'
-                            : 'text-slate-400 hover:text-white hover:bg-white/5'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <Icon className={`w-3.5 h-3.5 ${active ? 'text-pink-400' : 'text-slate-400'}`} />
-                          <span>{item.label}</span>
-                        </div>
-                        {item.badge && (
-                          <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-pink-500 text-white">
-                            {item.badge}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-[10px] font-mono font-bold text-[#E9C349] uppercase px-3 pb-1.5 tracking-wider flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-[#E9C349]" />
-                  {language === 'es' ? 'Pedagogía & Audio' : 'Pedagogy & Audio'}
-                </div>
-                <div className="space-y-1">
-                  {[
-                    { id: 'methodology', label: 'Metodología & Lab', icon: Compass, badge: 'NUEVO' },
-                    { id: 'podcasts', label: 'Podcasts', icon: Radio, badge: 'INCLUIDO' },
-                    { id: 'soundcloud', label: 'SoundCloud Player Sync', icon: Music, badge: 'BORGOÑA' }
-                  ].map(item => {
-                    const Icon = item.icon;
-                    const active = activeSubTab === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => {
-                          playChime('click');
-                          setActiveSubTab(item.id as any);
-                        }}
-                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
-                          active
-                            ? 'bg-gradient-to-r from-amber-950/60 to-purple-900/40 text-white border border-[#E9C349]/40 shadow-lg'
-                            : 'text-slate-400 hover:text-white hover:bg-white/5'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <Icon className={`w-3.5 h-3.5 ${active ? 'text-[#E9C349]' : 'text-slate-400'}`} />
-                          <span>{item.label}</span>
-                        </div>
-                        {item.badge && (
-                          <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-[#E9C349] text-black">
-                            {item.badge}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </nav>
           </div>
 
-          {/* Bottom Switch Mode button */}
-          <div className="pt-4 border-t border-white/5 space-y-2">
+          <div className="flex items-center gap-2.5 shrink-0">
+            <button 
+              onClick={() => setActiveSubTab('classes')}
+              className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 ${
+                activeSubTab === 'classes'
+                  ? 'bg-pink-600 border-pink-400 text-white shadow-lg shadow-pink-600/30'
+                  : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-300'
+              }`}
+              title="Clases & Directos"
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Clases</span>
+            </button>
+            <button 
+              onClick={() => setActiveSubTab('overview')}
+              className={`p-2 rounded-xl border text-slate-300 relative transition-all ${
+                activeSubTab === 'overview'
+                  ? 'bg-pink-600 border-pink-400 text-white'
+                  : 'bg-white/5 hover:bg-white/10 border-white/10'
+              }`}
+              title="Notificaciones y Actividad"
+            >
+              <BellRing className="w-4 h-4" />
+              <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-pink-500 animate-ping" />
+            </button>
+            <button 
+              onClick={() => setActiveSubTab('promotion')}
+              className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 ${
+                activeSubTab === 'promotion'
+                  ? 'bg-[#D9A9FF] border-[#D9A9FF] text-black shadow-lg shadow-yellow-500/20'
+                  : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-300'
+              }`}
+              title="Ajustes & Destacados"
+            >
+              <Settings className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Ajustes</span>
+            </button>
             <button
               onClick={handleRevertToStudent}
-              className="w-full py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-bold text-[11px] flex items-center justify-center gap-2 border border-white/10 transition-all"
+              className="py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-bold text-xs flex items-center gap-1.5 border border-white/10 transition-all ml-1"
+              title="Volver a modo estudiante"
             >
-              <ArrowRightLeft className="w-3.5 h-3.5 text-[#E9C349]" />
-              <span>{t.backBtn}</span>
+              <ArrowRightLeft className="w-3.5 h-3.5 text-[#D9A9FF]" />
+              <span className="hidden md:inline">{t.backBtn}</span>
             </button>
           </div>
         </div>
 
-        {/* Main Workspace Area */}
-        <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-6">
-          
-          {/* Top Bar Header */}
-          <div className="flex items-center justify-between border-b border-white/10 pb-4">
-            <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">Dashboard</h2>
-            <div className="flex items-center gap-3">
-              <button 
-                onClick={() => setActiveSubTab('classes')}
-                className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 transition-all"
+        {/* Navigation Sub-Tabs Bar */}
+        <div className="px-4 py-2.5 border-b border-white/10 bg-[#0a0815]/90 flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth">
+          {[
+            { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+            { id: 'students', label: 'Alumnos', icon: Users, badge: students.length },
+            { id: 'classes', label: 'Clases & Directos', icon: Calendar },
+            { id: 'finances', label: 'Finanzas', icon: DollarSign },
+            { id: 'documents', label: 'Documentos PDF', icon: BookMarked, badge: instructorDocuments.length },
+            { id: 'methodology', label: 'Metodología & Lab', icon: Award },
+            { id: 'publish', label: 'Publicar Cursos', icon: PlusCircle },
+            { id: 'podcasts', label: 'Podcasts', icon: Radio },
+            { id: 'overview', label: 'Ventas & Actividad', icon: ShoppingBag },
+            { id: 'promotion', label: 'Ajustes & Destacados', icon: Settings },
+          ].map(tab => {
+            const Icon = tab.icon;
+            const isCurrent = activeSubTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  playChime('click');
+                  setActiveSubTab(tab.id as any);
+                }}
+                className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shrink-0 transition-all border ${
+                  isCurrent
+                    ? 'bg-gradient-to-r from-pink-600 to-purple-600 border-pink-400 text-white shadow-md shadow-purple-600/30'
+                    : 'bg-white/5 hover:bg-white/10 border-white/5 text-slate-300 hover:text-white'
+                }`}
               >
-                <Calendar className="w-4 h-4" />
+                <Icon className="w-3.5 h-3.5" />
+                <span>{tab.label}</span>
+                {tab.badge !== undefined && (
+                  <span className={`px-1.5 py-0.2 rounded-md text-[9px] font-mono font-black ${
+                    isCurrent ? 'bg-white/20 text-white' : 'bg-white/10 text-slate-400'
+                  }`}>
+                    {tab.badge}
+                  </span>
+                )}
               </button>
-              <button 
-                onClick={() => setActiveSubTab('overview')}
-                className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 relative transition-all"
+            );
+          })}
+        </div>
+
+        {/* Global Student Filter State Bar (Maintained across all instructor dashboard tabs) */}
+        <div className="px-4 py-2.5 border-b border-white/10 bg-[#140f26]/95 flex flex-wrap items-center justify-between gap-3 transition-all">
+          <div className="flex items-center gap-2 flex-wrap min-w-0">
+            <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold text-slate-300">
+              <Filter className="w-3.5 h-3.5 text-[#D9A9FF]" />
+              <span className="uppercase text-[10px] tracking-wider text-[#D9A9FF]">Estudiante Filtrado:</span>
+            </div>
+
+            {/* Student Chips Selector */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                onClick={() => handleSelectStudentForFilter(null)}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold border transition-all ${
+                  selectedStudentUid === null
+                    ? 'bg-[#D9A9FF] text-black border-[#D9A9FF] shadow-sm'
+                    : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-400 hover:text-slate-200'
+                }`}
               >
-                <BellRing className="w-4 h-4" />
-                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-pink-500 animate-ping" />
+                Todos ({students.length})
               </button>
-              <button 
-                onClick={() => setActiveSubTab('promotion')}
-                className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 transition-all"
-              >
-                <Settings className="w-4 h-4" />
-              </button>
+
+              {students.map(std => {
+                const isSelected = selectedStudentUid === std.id;
+                return (
+                  <button
+                    key={std.id}
+                    onClick={() => handleSelectStudentForFilter(isSelected ? null : std.id)}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold border flex items-center gap-1.5 transition-all ${
+                      isSelected
+                        ? 'bg-gradient-to-r from-pink-500/25 to-purple-500/25 border-pink-400 text-pink-200 shadow-[0_0_12px_rgba(236,72,153,0.3)] ring-1 ring-pink-400/50'
+                        : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-pink-400 animate-pulse' : 'bg-slate-500'}`} />
+                    <span>{std.name}</span>
+                    {isSelected && <Check className="w-3 h-3 text-pink-300" />}
+                  </button>
+                );
+              })}
             </div>
           </div>
+
+          {selectedStudent ? (
+            <div className="flex items-center gap-2 shrink-0 animate-fadeIn">
+              <div className="px-2.5 py-1 rounded-lg bg-pink-950/60 border border-pink-500/40 text-[10px] font-mono text-pink-200 flex items-center gap-1.5 shadow-sm">
+                <UserIcon className="w-3 h-3 text-pink-400" />
+                <span className="font-bold text-white truncate max-w-[140px]">{selectedStudent.name}</span>
+                <span className="text-pink-400/80 font-mono text-[9px]">({selectedStudent.id})</span>
+              </div>
+
+              <button
+                onClick={() => handleOpenStudentPlan(selectedStudent)}
+                className="px-2.5 py-1 rounded-lg bg-[#C23E9E]/30 hover:bg-[#C23E9E]/50 border border-[#C23E9E]/50 text-[#D9A9FF] text-[10px] font-mono font-bold transition-all flex items-center gap-1"
+                title="Abrir Plan de Onboarding IA"
+              >
+                <Sparkles className="w-3 h-3 text-[#D9A9FF]" />
+                <span className="hidden sm:inline">Plan IA</span>
+              </button>
+
+              <button
+                onClick={() => handleAlertStudent(selectedStudent.name)}
+                className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 text-[10px] font-bold transition-all flex items-center gap-1"
+                title="Enviar Notificación de Postura"
+              >
+                <BellRing className="w-3 h-3 text-yellow-400" />
+                <span className="hidden sm:inline">Alerta</span>
+              </button>
+
+              <button
+                onClick={() => handleSelectStudentForFilter(null)}
+                className="p-1 rounded-lg bg-white/5 hover:bg-rose-500/20 border border-white/10 hover:border-rose-500/40 text-slate-400 hover:text-rose-300 transition-all"
+                title="Limpiar filtro de estudiante"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <div className="text-[10px] font-mono text-slate-400 hidden lg:flex items-center gap-1">
+              <span>Selecciona un alumno arriba para mantener contexto entre pestañas</span>
+            </div>
+          )}
+        </div>
+
+        {/* Main Workspace Area */}
+        <div className="flex-1 overflow-y-auto">
 
       {/* Floating System Alerts */}
       <AnimatePresence>
@@ -1460,9 +1939,9 @@ Semana 3-4 (Progresión):
             initial={{ opacity: 0, y: -20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -20, scale: 0.95 }}
-            className="fixed top-20 right-4 sm:right-8 z-50 max-w-md p-4 bg-[#121212] border-2 border-[#E9C349]/50 shadow-[0_4px_30px_rgba(233,195,73,0.15)] rounded-2xl flex items-center gap-3"
+            className="fixed top-20 right-4 sm:right-8 z-50 max-w-md p-4 bg-[#121212] border-2 border-[#D9A9FF]/50 shadow-[0_4px_30px_rgba(217, 169, 255,0.15)] rounded-2xl flex items-center gap-3"
           >
-            <BellRing className="w-5 h-5 text-[#E9C349] shrink-0" />
+            <BellRing className="w-5 h-5 text-[#D9A9FF] shrink-0" />
             <p className="text-xs font-bold text-[#EDEFF4]">{alertText}</p>
           </motion.div>
         )}
@@ -1497,7 +1976,7 @@ Semana 3-4 (Progresión):
                       </div>
                       <div className="mt-3">
                         <div className="text-xl font-bold text-white font-mono">2,890</div>
-                        <div className="text-[10px] text-slate-400 font-semibold mt-0.5">Free Stats</div>
+                        <div className="text-[10px] text-slate-400 font-semibold mt-0.5">Alumnos alcanzados</div>
                       </div>
                     </div>
 
@@ -1511,7 +1990,7 @@ Semana 3-4 (Progresión):
                       </div>
                       <div className="mt-3">
                         <div className="text-xl font-bold text-white font-mono">1,387</div>
-                        <div className="text-[10px] text-slate-400 font-semibold mt-0.5">Tmsa heap</div>
+                        <div className="text-[10px] text-slate-400 font-semibold mt-0.5">Lecciones completadas</div>
                       </div>
                     </div>
 
@@ -1525,7 +2004,7 @@ Semana 3-4 (Progresión):
                       </div>
                       <div className="mt-3">
                         <div className="text-xl font-bold text-white font-mono">4,017</div>
-                        <div className="text-[10px] text-slate-400 font-semibold mt-0.5">Notifications</div>
+                        <div className="text-[10px] text-slate-400 font-semibold mt-0.5">Notificaciones enviadas</div>
                       </div>
                     </div>
 
@@ -1539,75 +2018,78 @@ Semana 3-4 (Progresión):
                       </div>
                       <div className="mt-3">
                         <div className="text-xl font-bold text-white font-mono">2,033</div>
-                        <div className="text-[10px] text-slate-400 font-semibold mt-0.5">New sacks</div>
+                        <div className="text-[10px] text-slate-400 font-semibold mt-0.5">Ventas de cursos</div>
                       </div>
                     </div>
 
                   </div>
                 </div>
 
-                {/* 2. Central Disco Ball - 4 Cols */}
-                <div className="lg:col-span-4 flex items-center justify-center bg-[#17132a]/40 border border-white/10 rounded-2xl p-2 relative overflow-hidden min-h-[220px]">
-                  <DiscoBall />
-                </div>
+                {/* 2. Studio Vibe - animated 3D disco ball with tempo & live controls - 4 Cols */}
+                <StudioVibeCard
+                  onToast={(msg) => {
+                    setAlertText(msg);
+                    setTimeout(() => setAlertText(null), 3000);
+                  }}
+                />
 
                 {/* 3. Student Management Panel - 4 Cols */}
                 <div className="lg:col-span-4 bg-[#17132a]/80 border border-white/10 rounded-2xl p-4 flex flex-col justify-between space-y-3">
-                  <h3 className="text-xs font-mono font-bold uppercase text-slate-300 tracking-wider">Student Management</h3>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-mono font-bold uppercase text-slate-300 tracking-wider">
+                      Student Management ({students.length})
+                    </h3>
+                    <button
+                      onClick={() => setActiveSubTab('students')}
+                      className="text-[10px] font-mono font-bold text-[#D9A9FF] hover:underline flex items-center gap-1"
+                    >
+                      <span>Ver Todos</span>
+                      <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
                   
-                  <div className="space-y-3 flex-1 flex flex-col justify-around">
-                    
-                    {/* Student 1 */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-xs font-bold text-white">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-lg bg-pink-500/20 text-pink-400 flex items-center justify-center text-[10px]">
-                            <Users className="w-3.5 h-3.5" />
+                  <div className="space-y-2.5 flex-1 flex flex-col justify-around">
+                    {students.slice(0, 3).map((std, idx) => {
+                      const isSel = selectedStudentUid === std.id;
+                      const progressPct = idx === 0 ? 85 : idx === 1 ? 55 : 35;
+                      return (
+                        <div
+                          key={std.id}
+                          onClick={() => handleSelectStudentForFilter(isSel ? null : std.id)}
+                          className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
+                            isSel
+                              ? 'bg-pink-500/20 border-pink-400 text-white shadow-[0_0_12px_rgba(236,72,153,0.25)] ring-1 ring-pink-400/60'
+                              : 'bg-white/5 border-white/5 hover:border-white/20 hover:bg-white/10 text-slate-200'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between text-xs font-bold mb-1.5">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-mono font-bold ${
+                                isSel ? 'bg-pink-500 text-white' : 'bg-white/10 text-[#D9A9FF]'
+                              }`}>
+                                {std.name.substring(0, 2).toUpperCase()}
+                              </div>
+                              <span className="truncate">{std.name}</span>
+                            </div>
+                            <span className="font-mono text-[10px] text-slate-400 shrink-0">
+                              {std.level}
+                            </span>
                           </div>
-                          <span>Pranoisims</span>
-                        </div>
-                        <span className="font-mono text-[11px] text-slate-400">15 / 1</span>
-                      </div>
-                      <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                        <div className="bg-gradient-to-r from-pink-500 to-purple-500 h-2 rounded-full w-[50%]" />
-                      </div>
-                      <div className="text-[9px] font-mono text-slate-400">Miami late progress 50%</div>
-                    </div>
-
-                    {/* Student 2 */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-xs font-bold text-white">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center text-[10px]">
-                            <Users className="w-3.5 h-3.5" />
+                          <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className="bg-gradient-to-r from-pink-500 to-purple-500 h-1.5 rounded-full"
+                              style={{ width: `${progressPct}%` }}
+                            />
                           </div>
-                          <span>Electrics</span>
-                        </div>
-                        <span className="font-mono text-[11px] text-slate-400">11 / 1</span>
-                      </div>
-                      <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                        <div className="bg-gradient-to-r from-blue-500 to-indigo-500 h-2 rounded-full w-[50%]" />
-                      </div>
-                      <div className="text-[9px] font-mono text-slate-400">Instantiate progress 50%</div>
-                    </div>
-
-                    {/* Student 3 */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-xs font-bold text-white">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center text-[10px]">
-                            <TrendingUp className="w-3.5 h-3.5" />
+                          <div className="flex items-center justify-between text-[9px] font-mono text-slate-400 mt-1">
+                            <span>UID: {std.id}</span>
+                            <span className={isSel ? 'text-pink-300 font-bold flex items-center gap-1' : ''}>
+                              {isSel ? '✓ Estudiante Seleccionado' : `Progreso ${progressPct}%`}
+                            </span>
                           </div>
-                          <span>Progress</span>
                         </div>
-                        <span className="font-mono text-[11px] text-slate-400">8 / 5</span>
-                      </div>
-                      <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                        <div className="bg-gradient-to-r from-amber-500 to-orange-500 h-2 rounded-full w-[30%]" />
-                      </div>
-                      <div className="text-[9px] font-mono text-slate-400">Initiate progress 30%</div>
-                    </div>
-
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -1619,7 +2101,10 @@ Semana 3-4 (Progresión):
                 {/* Communication Hub Panel (7 Cols) */}
                 <div className="lg:col-span-7 bg-[#17132a]/80 border border-white/10 rounded-2xl p-4 sm:p-5 space-y-4">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-white">Communication Hub</h3>
+                    <div>
+                      <h3 className="text-sm font-bold text-white">Communication Hub</h3>
+                      <p className="text-[10px] font-mono text-slate-400">Haz clic en un alumno para seleccionarlo</p>
+                    </div>
                     <button
                       onClick={handleStartLiveClass}
                       className="px-4 py-2 rounded-xl bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600 text-white font-black text-xs shadow-lg active:scale-95 transition-all"
@@ -1633,42 +2118,72 @@ Semana 3-4 (Progresión):
                     <table className="w-full text-left text-xs">
                       <thead>
                         <tr className="text-slate-400 font-mono text-[10px] border-b border-white/10 pb-2">
-                          <th className="pb-2">Name</th>
-                          <th className="pb-2">Status</th>
-                          <th className="pb-2">Status</th>
-                          <th className="pb-2">Last seen time</th>
-                          <th className="pb-2 text-right"></th>
+                          <th className="pb-2">Alumno</th>
+                          <th className="pb-2">Nivel</th>
+                          <th className="pb-2">Actividad</th>
+                          <th className="pb-2 text-right">Acción</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-white/5">
-                        {[
-                          { name: 'Jassy Soner', role: 'Jonny Instructor', sub: 'Asaph Math', status: 'Today', color: 'bg-pink-500', time: '2 hours ago' },
-                          { name: 'Jassy Soner', role: 'Jonny Instructor', sub: 'Asaph Math', status: 'Today', color: 'bg-blue-500', time: '3 hours ago' },
-                          { name: 'Jassy Soner', role: 'Jonny instructor', sub: 'Rsaph Math', status: 'Today', color: 'bg-amber-500', time: '3 hours ago' },
-                        ].map((row, idx) => (
-                          <tr key={idx} className="hover:bg-white/5 transition-all">
-                            <td className="py-2.5">
-                              <div className="flex items-center gap-2.5">
-                                <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=100" className="w-7 h-7 rounded-full object-cover" />
-                                <div>
-                                  <div className="font-bold text-white text-xs">{row.name}</div>
-                                  <div className="text-[9px] text-slate-400">{row.role}</div>
+                        {students.map((std) => {
+                          const isSel = selectedStudentUid === std.id;
+                          return (
+                            <tr
+                              key={std.id}
+                              onClick={() => handleSelectStudentForFilter(isSel ? null : std.id)}
+                              className={`transition-all cursor-pointer ${
+                                isSel ? 'bg-pink-500/20 text-white' : 'hover:bg-white/5'
+                              }`}
+                            >
+                              <td className="py-2.5">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="w-7 h-7 rounded-full bg-white/10 border border-white/20 flex items-center justify-center font-bold text-[#D9A9FF] text-[10px]">
+                                    {std.name.substring(0, 2).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <div className="font-bold text-white text-xs flex items-center gap-1.5">
+                                      <span>{std.name}</span>
+                                      {isSel && (
+                                        <span className="text-[9px] font-mono bg-pink-500 text-white px-1.5 py-0.2 rounded font-bold">
+                                          FILTRADO
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-[9px] font-mono text-slate-400">{std.email}</div>
+                                  </div>
                                 </div>
-                              </div>
-                            </td>
-                            <td className="py-2.5 text-slate-300 font-medium">{row.sub}</td>
-                            <td className="py-2.5">
-                              <div className="flex items-center gap-1.5">
-                                <span className={`w-2 h-2 rounded-full ${row.color}`} />
-                                <span className="text-slate-300">{row.status}</span>
-                              </div>
-                            </td>
-                            <td className="py-2.5 text-slate-400 font-mono text-[11px]">{row.time}</td>
-                            <td className="py-2.5 text-right">
-                              <MoreVertical className="w-4 h-4 text-slate-400 inline cursor-pointer hover:text-white" />
-                            </td>
-                          </tr>
-                        ))}
+                              </td>
+                              <td className="py-2.5">
+                                <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold ${
+                                  std.level === 'Avanzado' ? 'bg-red-500/20 text-red-300' :
+                                  std.level === 'Intermedio' ? 'bg-[#D9A9FF]/20 text-[#D9A9FF]' :
+                                  'bg-cyan-500/20 text-cyan-300'
+                                }`}>
+                                  {std.level}
+                                </span>
+                              </td>
+                              <td className="py-2.5 text-slate-400 font-mono text-[11px]">
+                                {std.lastActive}
+                              </td>
+                              <td className="py-2.5 text-right">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSelectStudentForFilter(isSel ? null : std.id);
+                                  }}
+                                  className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-all border ${
+                                    isSel
+                                      ? 'bg-pink-600 border-pink-400 text-white'
+                                      : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-300'
+                                  }`}
+                                >
+                                  {isSel ? '✓ Activo' : 'Seleccionar'}
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1817,7 +2332,7 @@ Semana 3-4 (Progresión):
                 <div className="bg-[#121212] border border-white/5 p-4 sm:p-5 rounded-2xl shadow-sm relative overflow-hidden">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[10px] font-mono tracking-widest text-[#8A8A8A] font-bold uppercase">{t.grossRevenue}</span>
-                    <DollarSign className="w-4 h-4 text-[#E9C349]" />
+                    <DollarSign className="w-4 h-4 text-[#D9A9FF]" />
                   </div>
                   <h4 className="text-xl sm:text-2xl font-serif-elegant font-black text-white">
                     ${totalGross.toFixed(2)} <span className="text-[10px] text-[#8A8A8A] font-mono font-bold">{t.currency}</span>
@@ -1827,16 +2342,16 @@ Semana 3-4 (Progresión):
                 <div className="bg-[#121212] border border-white/5 p-4 sm:p-5 rounded-2xl shadow-sm relative overflow-hidden">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[10px] font-mono tracking-widest text-[#8A8A8A] font-bold uppercase">{t.platformFee}</span>
-                    <Percent className="w-4 h-4 text-[#9A2B3C]" />
+                    <Percent className="w-4 h-4 text-[#C23E9E]" />
                   </div>
                   <h4 className="text-xl sm:text-2xl font-serif-elegant font-black text-red-400">
                     -${totalPlatformCut.toFixed(2)} <span className="text-[10px] text-[#8A8A8A] font-mono font-bold">{t.currency}</span>
                   </h4>
                 </div>
 
-                <div className="bg-[#121212] border border-[#E9C349]/10 p-4 sm:p-5 rounded-2xl shadow-sm relative overflow-hidden bg-gradient-to-br from-[#E9C349]/5 to-transparent">
+                <div className="bg-[#121212] border border-[#D9A9FF]/10 p-4 sm:p-5 rounded-2xl shadow-sm relative overflow-hidden bg-gradient-to-br from-[#D9A9FF]/5 to-transparent">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-mono tracking-widest text-[#E9C349] font-black uppercase">{t.netRevenue}</span>
+                    <span className="text-[10px] font-mono tracking-widest text-[#D9A9FF] font-black uppercase">{t.netRevenue}</span>
                     <TrendingUp className="w-4 h-4 text-emerald-400" />
                   </div>
                   <h4 className="text-xl sm:text-2xl font-serif-elegant font-black text-emerald-400">
@@ -1857,10 +2372,10 @@ Semana 3-4 (Progresión):
 
               {/* Purchase Simulation Feature */}
               <div className="bg-[#121212] border border-white/5 p-5 rounded-[24px] flex flex-col md:flex-row md:items-center justify-between gap-5 relative overflow-hidden shadow-inner">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-[#E9C349]/5 rounded-full blur-2xl" />
+                <div className="absolute top-0 right-0 w-32 h-32 bg-[#D9A9FF]/5 rounded-full blur-2xl" />
                 <div className="relative z-10">
                   <h4 className="text-base font-black text-[#EDEFF4] flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-[#E9C349]" />
+                    <Sparkles className="w-4 h-4 text-[#D9A9FF]" />
                     {t.simulateSale}
                   </h4>
                   <p className="text-xs text-[#8A8A8A] max-w-xl font-semibold mt-1">
@@ -1870,7 +2385,7 @@ Semana 3-4 (Progresión):
                 <button
                   id="simulate-purchase-btn"
                   onClick={handleSimulateSale}
-                  className="px-5 py-3 rounded-xl bg-white/5 hover:bg-[#E9C349] text-white hover:text-black font-black text-xs border border-white/10 hover:border-[#E9C349] transition-all whitespace-nowrap self-start md:self-center"
+                  className="px-5 py-3 rounded-xl bg-white/5 hover:bg-[#D9A9FF] text-white hover:text-black font-black text-xs border border-white/10 hover:border-[#D9A9FF] transition-all whitespace-nowrap self-start md:self-center"
                 >
                   {language === 'es' ? 'Simular Pago de Alumno' : 'Simulate Payment'}
                 </button>
@@ -1902,7 +2417,7 @@ Semana 3-4 (Progresión):
                         {transactions.map(tx => (
                           <tr key={tx.id} className="border-b border-white/5 hover:bg-white/5 transition-all">
                             <td className="py-3 pr-2 font-bold text-white">
-                              <span className="text-[9px] font-mono font-black text-black bg-[#E9C349]/90 px-1.5 py-0.5 rounded uppercase mr-2 tracking-wide">
+                              <span className="text-[9px] font-mono font-black text-black bg-[#D9A9FF]/90 px-1.5 py-0.5 rounded uppercase mr-2 tracking-wide">
                                 {tx.itemType}
                               </span>
                               {tx.itemTitle}
@@ -1983,7 +2498,7 @@ Semana 3-4 (Progresión):
                           required
                           value={dossierRealName}
                           onChange={e => setDossierRealName(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-2xl bg-[#0a0814] border border-white/20 text-white font-extrabold text-xs focus:outline-none focus:border-[#E9C349] transition-all shadow-inner"
+                          className="w-full px-3.5 py-2.5 rounded-2xl bg-[#0a0814] border border-white/20 text-white font-extrabold text-xs focus:outline-none focus:border-[#D9A9FF] transition-all shadow-inner"
                         />
                       </div>
                       <div>
@@ -1995,7 +2510,7 @@ Semana 3-4 (Progresión):
                           required
                           value={dossierAkaName}
                           onChange={e => setDossierAkaName(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-2xl bg-[#0a0814] border border-white/20 text-white font-extrabold text-xs focus:outline-none focus:border-[#E9C349] transition-all shadow-inner"
+                          className="w-full px-3.5 py-2.5 rounded-2xl bg-[#0a0814] border border-white/20 text-white font-extrabold text-xs focus:outline-none focus:border-[#D9A9FF] transition-all shadow-inner"
                         />
                       </div>
                     </div>
@@ -2011,7 +2526,7 @@ Semana 3-4 (Progresión):
                       value={dossierBio}
                       onChange={e => setDossierBio(e.target.value)}
                       placeholder="Waacking historia even fearcourred bio anineva traraoenium: la waacking history and cwadenifica y la historia de la técnica..."
-                      className="w-full px-3.5 py-2.5 rounded-2xl bg-[#0a0814] border border-white/20 text-slate-200 font-semibold text-xs focus:outline-none focus:border-[#E9C349] resize-none leading-relaxed shadow-inner"
+                      className="w-full px-3.5 py-2.5 rounded-2xl bg-[#0a0814] border border-white/20 text-slate-200 font-semibold text-xs focus:outline-none focus:border-[#D9A9FF] resize-none leading-relaxed shadow-inner"
                     />
                   </div>
 
@@ -2072,7 +2587,7 @@ Semana 3-4 (Progresión):
                       value={dossierMilestones.join(', ')}
                       onChange={e => setDossierMilestones(e.target.value.split(', '))}
                       placeholder="Entrensa milestones obentaaciones, historias claves, prilendos, premiros y atrada lemilemlos..."
-                      className="w-full px-3.5 py-2.5 rounded-2xl bg-[#0a0814] border border-white/20 text-slate-200 font-semibold text-xs focus:outline-none focus:border-[#E9C349] resize-none leading-relaxed shadow-inner"
+                      className="w-full px-3.5 py-2.5 rounded-2xl bg-[#0a0814] border border-white/20 text-slate-200 font-semibold text-xs focus:outline-none focus:border-[#D9A9FF] resize-none leading-relaxed shadow-inner"
                     />
                   </div>
 
@@ -2082,7 +2597,7 @@ Semana 3-4 (Progresión):
                       <p className="text-[10px] font-mono font-black text-slate-300 tracking-widest uppercase">
                         MIS IMÁGENES & PORTAFOLIO ({dossierPortfolio.length})
                       </p>
-                      <label className="text-[9px] font-mono font-bold text-[#E9C349] bg-[#E9C349]/10 border border-[#E9C349]/30 hover:bg-[#E9C349] hover:text-black px-2.5 py-1 rounded-lg cursor-pointer transition-all flex items-center gap-1">
+                      <label className="text-[9px] font-mono font-bold text-[#D9A9FF] bg-[#D9A9FF]/10 border border-[#D9A9FF]/30 hover:bg-[#D9A9FF] hover:text-black px-2.5 py-1 rounded-lg cursor-pointer transition-all flex items-center gap-1">
                         <Upload className="w-3 h-3" />
                         <span>Subir desde archivo</span>
                         <input
@@ -2111,7 +2626,7 @@ Semana 3-4 (Progresión):
                             <button
                               type="button"
                               onClick={() => handleSetPortfolioAsInstructorAvatar(url)}
-                              className="px-1.5 py-0.5 bg-[#E9C349] text-black text-[7px] font-mono font-black uppercase rounded"
+                              className="px-1.5 py-0.5 bg-[#D9A9FF] text-black text-[7px] font-mono font-black uppercase rounded"
                               title="Usar como foto de perfil"
                             >
                               Avatar
@@ -2128,7 +2643,7 @@ Semana 3-4 (Progresión):
                         </div>
                       ))}
 
-                      <label className="w-20 h-24 rounded-2xl border-2 border-dashed border-white/30 hover:border-[#E9C349] flex flex-col items-center justify-center text-slate-400 hover:text-[#E9C349] transition-all shrink-0 bg-white/5 cursor-pointer group">
+                      <label className="w-20 h-24 rounded-2xl border-2 border-dashed border-white/30 hover:border-[#D9A9FF] flex flex-col items-center justify-center text-slate-400 hover:text-[#D9A9FF] transition-all shrink-0 bg-white/5 cursor-pointer group">
                         <Plus className="w-5 h-5 group-hover:scale-110 transition-transform" />
                         <span className="text-[8px] font-mono font-bold uppercase mt-1">Agregar</span>
                         <input
@@ -2145,95 +2660,128 @@ Semana 3-4 (Progresión):
                   {/* CTA BUTTON FROM SCREENSHOT */}
                   <button
                     onClick={(e) => handleSaveDossier(e)}
-                    className="w-full py-3.5 rounded-2xl border border-[#E9C349] bg-gradient-to-r from-[#1c182a] via-[#2c2212] to-[#1c182a] hover:from-[#2a2238] hover:to-[#2a2238] text-[#fce295] font-black text-xs uppercase tracking-widest shadow-xl shadow-[#E9C349]/10 active:scale-98 transition-all cursor-pointer"
+                    className="w-full py-3.5 rounded-2xl border border-[#D9A9FF] bg-gradient-to-r from-[#1c182a] via-[#2c2212] to-[#1c182a] hover:from-[#2a2238] hover:to-[#2a2238] text-[#fce295] font-black text-xs uppercase tracking-widest shadow-xl shadow-[#D9A9FF]/10 active:scale-98 transition-all cursor-pointer"
                   >
                     GUARDAR Y SINCRONIZAR EXPEDIENTE DE INSTRUCTOR
                   </button>
                 </div>
 
-                {/* RIGHT COLUMN: Instructor Hub & Plan Overlay Popup (6 Cols) */}
+                {/* RIGHT COLUMN: Instructor 4-Week Syllabus & Cátedra Curriculum Builder (6 Cols) */}
                 <div className="lg:col-span-6 space-y-4 relative">
                   
-                  {/* Top Header Tabs from screenshot */}
-                  <div className="bg-[#130f21] border border-white/10 rounded-2xl p-2.5 flex items-center gap-2 overflow-x-auto shadow-xl">
-                    <button className="px-4 py-2 rounded-xl bg-white/10 text-white font-black text-xs uppercase tracking-wider flex items-center gap-2 border border-white/10">
-                      <UserIcon className="w-3.5 h-3.5" /> DASHBOARD
-                    </button>
-                    <button className="px-4 py-2 rounded-xl text-slate-400 hover:text-white font-bold text-xs uppercase tracking-wider flex items-center gap-2">
-                      <CreditCard className="w-3.5 h-3.5" /> Mi Suscripción
-                    </button>
-                    <button className="px-4 py-2 rounded-xl text-slate-400 hover:text-white font-bold text-xs uppercase tracking-wider flex items-center gap-2 truncate">
-                      <Target className="w-3.5 h-3.5" /> Objetivos &...
+                  {/* Top Header Tabs */}
+                  <div className="bg-[#130f21] border border-white/10 rounded-2xl p-2.5 flex items-center justify-between gap-2 overflow-x-auto shadow-xl">
+                    <div className="flex items-center gap-2">
+                      <div className="px-3 py-1.5 rounded-xl bg-[#D9A9FF]/10 border border-[#D9A9FF]/30 text-[#D9A9FF] font-black text-xs uppercase tracking-wider flex items-center gap-2">
+                        <GraduationCap className="w-4 h-4 text-[#D9A9FF]" />
+                        <span>PLAN DE CÁTEDRA & SYLLABUS</span>
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-400 font-bold hidden sm:inline">
+                        (4 Semanas de Formación)
+                      </span>
+                    </div>
+                    
+                    <button
+                      type="button"
+                      onClick={() => handleSaveDossier()}
+                      className="px-3 py-1.5 rounded-xl bg-[#D9A9FF] hover:bg-[#F2CFFF] text-black font-black text-[11px] uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Guardar Plan</span>
                     </button>
                   </div>
 
-                  {/* Grid of Instructors Cards */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="bg-[#130f21] border border-pink-500/30 rounded-3xl p-4 space-y-3 relative overflow-hidden shadow-xl group">
-                      <div className="flex flex-col items-center text-center">
-                        <div className="relative">
-                          <img 
-                            src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200" 
-                            className="w-16 h-16 rounded-full object-cover border-2 border-pink-500 shadow-lg" 
-                          />
-                          <div className="absolute -bottom-1 -right-1 bg-[#9A1B42] text-white p-1 rounded-full text-[10px]">
-                            <Sparkles className="w-3 h-3" />
+                  {/* 4-Week Syllabus Editor for the Instructor */}
+                  <div className="bg-[#130f21] border border-white/10 rounded-3xl p-5 space-y-4 shadow-xl">
+                    <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                      <div>
+                        <h4 className="text-sm font-extrabold text-white flex items-center gap-2">
+                          <Layers className="w-4 h-4 text-[#D9A9FF]" />
+                          Módulos Semanales de tu Cátedra
+                        </h4>
+                        <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                          Estructura el progreso técnico que tus alumnos cursarán durante el mes.
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded">
+                        4 Módulos Activos
+                      </span>
+                    </div>
+
+                    <div className="space-y-3">
+                      {trainingWeeks.map((wk, idx) => (
+                        <div key={idx} className="p-3.5 rounded-2xl bg-[#0e0a1b] border border-white/10 space-y-2 hover:border-[#D9A9FF]/40 transition-all">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-mono font-black text-[#D9A9FF] uppercase bg-[#D9A9FF]/10 px-2 py-0.5 rounded border border-[#D9A9FF]/20">
+                              Semana {wk.week}
+                            </span>
+                            <input
+                              type="text"
+                              value={wk.duration}
+                              onChange={e => {
+                                const updated = [...trainingWeeks];
+                                updated[idx].duration = e.target.value;
+                                setTrainingWeeks(updated);
+                              }}
+                              placeholder="Duración / Carga"
+                              className="text-[10px] font-mono font-bold text-slate-400 bg-white/5 border border-white/10 rounded-lg px-2 py-1 focus:outline-none focus:border-[#D9A9FF] w-28 text-right"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <input
+                              type="text"
+                              value={wk.title}
+                              onChange={e => {
+                                const updated = [...trainingWeeks];
+                                updated[idx].title = e.target.value;
+                                setTrainingWeeks(updated);
+                              }}
+                              placeholder="Título del Módulo Semanal..."
+                              className="w-full bg-[#140e26] border border-white/10 rounded-xl px-3 py-1.5 text-white font-bold text-xs focus:outline-none focus:border-[#D9A9FF]"
+                            />
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                              <div className="sm:col-span-2">
+                                <input
+                                  type="text"
+                                  value={wk.desc}
+                                  onChange={e => {
+                                    const updated = [...trainingWeeks];
+                                    updated[idx].desc = e.target.value;
+                                    setTrainingWeeks(updated);
+                                  }}
+                                  placeholder="Descripción de los contenidos técnicos y ejercicios..."
+                                  className="w-full bg-[#140e26] border border-white/10 rounded-xl px-3 py-1.5 text-slate-300 text-[11px] focus:outline-none focus:border-[#D9A9FF]"
+                                />
+                              </div>
+                              <div>
+                                <input
+                                  type="text"
+                                  value={wk.focus}
+                                  onChange={e => {
+                                    const updated = [...trainingWeeks];
+                                    updated[idx].focus = e.target.value;
+                                    setTrainingWeeks(updated);
+                                  }}
+                                  placeholder="Enfoque clave"
+                                  className="w-full bg-[#140e26] border border-white/10 rounded-xl px-3 py-1.5 text-purple-300 font-mono text-[10px] focus:outline-none focus:border-purple-400"
+                                />
+                              </div>
+                            </div>
                           </div>
                         </div>
-                        <h4 className="text-sm font-extrabold text-white mt-2">Aka_Wackson</h4>
-                        <p className="text-[10px] text-slate-400 font-semibold mt-1 line-clamp-2">
-                          bio snippet | Bases para aprender ritmos disco y poses dramáticas.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="bg-[#130f21] border border-white/10 rounded-3xl p-4 space-y-3 relative overflow-hidden shadow-xl">
-                      <div className="flex flex-col items-center text-center">
-                        <img 
-                          src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200" 
-                          className="w-16 h-16 rounded-full object-cover border border-white/20 shadow-md grayscale opacity-70" 
-                        />
-                        <h4 className="text-sm font-extrabold text-white mt-2">Viktor Funk</h4>
-                        <p className="text-[10px] text-slate-400 font-semibold mt-1 line-clamp-2">
-                          Specialist in Disco Mechanics and stage projection.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* FLOATING POPUP OVERLAY FROM SCREENSHOT */}
-                  <div className="bg-[#1c182b]/95 border border-white/20 rounded-3xl p-5 shadow-2xl backdrop-blur-2xl space-y-4 absolute top-12 right-0 left-0 sm:left-auto sm:w-80 z-30 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                    <div className="border-b border-white/10 pb-2">
-                      <h4 className="text-xs font-black text-white uppercase tracking-wider">
-                        PLAN DE ENTRENAMIENTO DE Aka_Wackson
-                      </h4>
-                    </div>
-
-                    <div className="space-y-2 text-xs font-bold text-slate-200">
-                      <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
-                        <span className="text-[#E9C349]">Week 1:</span> Rolls & Poses Bases
-                      </div>
-                      <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
-                        <span className="text-[#E9C349]">Week 2:</span> Transitions & Flow
-                      </div>
-                      <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
-                        <span className="text-[#E9C349]">Week 3:</span> Advanced Posing & Expression
-                      </div>
-                      <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
-                        <span className="text-[#E9C349]">Week 4:</span> Performance Lab & Freestyle
-                      </div>
+                      ))}
                     </div>
 
                     <button
-                      onClick={() => handleJoinTrainingPlan('Aka_Wackson')}
-                      className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-[#201c12] via-[#2d2315] to-[#201c12] border border-[#E9C349] text-[#fbe18d] hover:text-white font-black text-[11px] uppercase tracking-wider shadow-lg active:scale-95 transition-all"
+                      type="button"
+                      onClick={(e) => handleSaveDossier(e)}
+                      className="w-full py-3 rounded-2xl bg-gradient-to-r from-purple-900/40 via-[#D9A9FF]/20 to-purple-900/40 border border-[#D9A9FF]/50 text-[#fbe18d] hover:text-white font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg"
                     >
-                      INICIAR CLASE CON ESTE INSTRUCTOR
+                      <Sparkles className="w-4 h-4 text-[#D9A9FF]" />
+                      <span>Sincronizar Syllabus con Todos los Alumnos</span>
                     </button>
-                  </div>
-
-                  <div className="pt-2 text-right">
-                    <Sparkles className="w-8 h-8 text-[#E9C349]/30 inline animate-pulse" />
                   </div>
 
                   {/* Publisher Form & Published List */}
@@ -2331,14 +2879,14 @@ Semana 3-4 (Progresión):
                 {/* HERRAMIENTAS PEDAGÓGICAS DE AUDIO Y RITMO */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div>
-                    <h4 className="text-xs font-mono font-bold text-[#E9C349] uppercase tracking-wider mb-3 flex items-center gap-2">
-                      <Zap className="w-4 h-4 text-[#9A2B3C]" /> Metrónomo de Alta Precisión del Profesor
+                    <h4 className="text-xs font-mono font-bold text-[#D9A9FF] uppercase tracking-wider mb-3 flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-[#C23E9E]" /> Metrónomo de Alta Precisión del Profesor
                     </h4>
                     <MetronomeLabComponent />
                   </div>
                   <div>
-                    <h4 className="text-xs font-mono font-bold text-[#E9C349] uppercase tracking-wider mb-3 flex items-center gap-2">
-                      <Music className="w-4 h-4 text-[#9A2B3C]" /> Reproductor de SoundCloud de Cátedra
+                    <h4 className="text-xs font-mono font-bold text-[#D9A9FF] uppercase tracking-wider mb-3 flex items-center gap-2">
+                      <Music className="w-4 h-4 text-[#C23E9E]" /> Reproductor de SoundCloud de Cátedra
                     </h4>
                     <SoundCloudPlayer playlistUrl="https://soundcloud.com/user-615971162" title="SoundCloud Sync - Perfil del Profesor" />
                   </div>
@@ -2347,14 +2895,14 @@ Semana 3-4 (Progresión):
 
               {/* UBICACIÓN CENTRALIZADA DEL DIRECTORIO DE PROFESORES */}
               <div className="mt-10 pt-8 border-t border-white/10 space-y-6">
-                <div className="bg-[#121212] border border-[#E9C349]/30 rounded-3xl p-6 sm:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-2xl relative overflow-hidden">
+                <div className="bg-[#121212] border border-[#D9A9FF]/30 rounded-3xl p-6 sm:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-2xl relative overflow-hidden">
                   <div className="space-y-2 max-w-xl">
-                    <span className="text-[10px] font-mono font-bold text-[#E9C349] bg-[#E9C349]/10 px-3 py-1 rounded-full border border-[#E9C349]/20 uppercase inline-flex items-center gap-1">
+                    <span className="text-[10px] font-mono font-bold text-[#D9A9FF] bg-[#D9A9FF]/10 px-3 py-1 rounded-full border border-[#D9A9FF]/20 uppercase inline-flex items-center gap-1">
                       <Sparkles className="w-3.5 h-3.5" />
                       {language === 'es' ? 'UBICACIÓN CENTRALIZADA' : 'CENTRAL LOCATION'}
                     </span>
                     <h3 className="text-xl sm:text-2xl font-black text-white uppercase tracking-wider flex items-center gap-2">
-                      <Globe className="w-5 h-5 text-[#E9C349]" /> 
+                      <Globe className="w-5 h-5 text-[#D9A9FF]" /> 
                       {language === 'es' ? 'Directorio Global de Profesores en el Tablero Principal' : 'Global Instructors Directory on Main Dashboard'}
                     </h3>
                     <p className="text-xs text-[#8A8A8A] font-semibold leading-relaxed">
@@ -2371,7 +2919,7 @@ Semana 3-4 (Progresión):
                         playChime('click');
                         setActiveTab('dashboard');
                       }}
-                      className="px-6 py-3.5 bg-[#E9C349] hover:bg-[#d8b33c] text-black text-xs font-black rounded-xl uppercase tracking-wider transition-all shadow-xl shrink-0 flex items-center gap-2 active:scale-95"
+                      className="px-6 py-3.5 bg-[#D9A9FF] hover:bg-[#B87CFF] text-black text-xs font-black rounded-xl uppercase tracking-wider transition-all shadow-xl shrink-0 flex items-center gap-2 active:scale-95"
                     >
                       <span>{language === 'es' ? 'Ir al Directorio del Tablero' : 'Go to Dashboard Directory'}</span>
                       <ChevronRight className="w-4 h-4" />
@@ -2381,13 +2929,13 @@ Semana 3-4 (Progresión):
               </div>
 
               {/* SECCIÓN/APARTADO: ¿CUÁNTO VALE LA SUSCRIPCIÓN? */}
-              <div className="mt-10 bg-gradient-to-r from-[#171128] via-[#1c1633] to-[#171128] border border-[#E9C349]/40 rounded-[32px] p-6 sm:p-8 space-y-6 shadow-2xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-[#E9C349]/5 rounded-full blur-3xl pointer-events-none" />
+              <div className="mt-10 bg-gradient-to-r from-[#171128] via-[#1c1633] to-[#171128] border border-[#D9A9FF]/40 rounded-[32px] p-6 sm:p-8 space-y-6 shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-[#D9A9FF]/5 rounded-full blur-3xl pointer-events-none" />
                 <div className="absolute bottom-0 left-0 w-64 h-64 bg-pink-500/5 rounded-full blur-3xl pointer-events-none" />
 
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-white/10 pb-6 relative z-10">
                   <div className="space-y-2 max-w-xl">
-                    <span className="px-3 py-1 rounded-full text-[10px] font-mono font-black uppercase bg-[#E9C349]/20 text-[#E9C349] border border-[#E9C349]/30 tracking-widest inline-flex items-center gap-1.5">
+                    <span className="px-3 py-1 rounded-full text-[10px] font-mono font-black uppercase bg-[#D9A9FF]/20 text-[#D9A9FF] border border-[#D9A9FF]/30 tracking-widest inline-flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5" /> PLAN DE MEMBRESÍA MENSUAL
                     </span>
                     <h3 className="text-2xl sm:text-3xl font-black text-white uppercase tracking-wider">
@@ -2399,7 +2947,7 @@ Semana 3-4 (Progresión):
                   </div>
 
                   {/* Dynamic Editable Price Tag Highlight */}
-                  <div className="bg-[#0a0814] border-2 border-[#E9C349] rounded-2xl p-5 min-w-[280px] sm:min-w-[320px] shadow-2xl relative space-y-3">
+                  <div className="bg-[#0a0814] border-2 border-[#D9A9FF] rounded-2xl p-5 min-w-[280px] sm:min-w-[320px] shadow-2xl relative space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-mono text-slate-300 font-extrabold uppercase tracking-widest block">
                         TARIFA MENSUAL EDITABLE
@@ -2411,7 +2959,7 @@ Semana 3-4 (Progresión):
 
                     <div className="space-y-2">
                       <div className="relative flex items-center">
-                        <span className="absolute left-3 text.base font-mono font-bold text-[#E9C349]">$</span>
+                        <span className="absolute left-3 text.base font-mono font-bold text-[#D9A9FF]">$</span>
                         <input
                           type="number"
                           step="0.50"
@@ -2422,7 +2970,7 @@ Semana 3-4 (Progresión):
                             setPriceNumberInput(e.target.value);
                           }}
                           placeholder="15.00"
-                          className="w-full bg-[#161224] border border-[#E9C349]/50 rounded-xl pl-8 pr-16 py-2.5 text-base font-mono font-black text-white focus:border-[#E9C349] focus:ring-1 focus:ring-[#E9C349] outline-none transition-all"
+                          className="w-full bg-[#161224] border border-[#D9A9FF]/50 rounded-xl pl-8 pr-16 py-2.5 text-base font-mono font-black text-white focus:border-[#D9A9FF] focus:ring-1 focus:ring-[#D9A9FF] outline-none transition-all"
                         />
                         <span className="absolute right-3 text-xs font-mono font-bold text-slate-400">USD/mes</span>
                       </div>
@@ -2438,16 +2986,16 @@ Semana 3-4 (Progresión):
                         type="button"
                         disabled={isUpdatingPrice}
                         onClick={() => handleUpdatePricing(priceNumberInput)}
-                        className="w-full py-2.5 px-4 bg-gradient-to-r from-[#9A2B3C] via-[#B8344B] to-[#E9C349] hover:brightness-110 active:scale-95 text-white text-xs font-mono font-black uppercase tracking-wider rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
+                        className="w-full py-2.5 px-4 bg-gradient-to-r from-[#C23E9E] via-[#C23FA0] to-[#D9A9FF] hover:brightness-110 active:scale-95 text-white text-xs font-mono font-black uppercase tracking-wider rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
                       >
                         {isUpdatingPrice ? (
                           <>
-                            <Loader2 className="w-4 h-4 animate-spin text-[#E9C349]" />
+                            <Loader2 className="w-4 h-4 animate-spin text-[#D9A9FF]" />
                             <span>Validando Backend...</span>
                           </>
                         ) : (
                           <>
-                            <CheckCircle2 className="w-4 h-4 text-[#E9C349]" />
+                            <CheckCircle2 className="w-4 h-4 text-[#D9A9FF]" />
                             <span>Actualizar Tarifa</span>
                           </>
                         )}
@@ -2455,7 +3003,7 @@ Semana 3-4 (Progresión):
                     </div>
 
                     <div className="text-[10px] font-mono text-slate-400 text-center pt-1 border-t border-white/5">
-                      Tarifa actual publicada: <strong className="text-[#E9C349]">{currentUser.monthlyPrice || '$15.00 USD/mes'}</strong>
+                      Tarifa actual publicada: <strong className="text-[#D9A9FF]">{currentUser.monthlyPrice || '$15.00 USD/mes'}</strong>
                     </div>
                   </div>
                 </div>
@@ -2473,7 +3021,7 @@ Semana 3-4 (Progresión):
                       title: "Evaluación & Feedback Personal",
                       desc: "Envía tus videos de práctica a través del Somatic Diary para recibir correcciones personalizadas del profesor.",
                       icon: Target,
-                      color: "text-[#E9C349]"
+                      color: "text-[#D9A9FF]"
                     },
                     {
                       title: "Material & Recursos Exclusivos",
@@ -2516,16 +3064,16 @@ Semana 3-4 (Progresión):
                 </div>
 
                 {/* FEATURED SUBSCRIPTION EXAMPLE FOR BRANDON HERMOSO */}
-                <div className="bg-[#0b0816] border border-[#E9C349]/50 rounded-2xl p-5 sm:p-6 flex flex-col md:flex-row items-center justify-between gap-5 relative z-10 shadow-xl">
+                <div className="bg-[#0b0816] border border-[#D9A9FF]/50 rounded-2xl p-5 sm:p-6 flex flex-col md:flex-row items-center justify-between gap-5 relative z-10 shadow-xl">
                   <div className="flex items-center gap-4">
                     <img
                       src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200"
                       alt="Brandon Hermoso"
-                      className="w-14 h-14 rounded-2xl object-cover border-2 border-[#E9C349] shadow-lg shrink-0"
+                      className="w-14 h-14 rounded-2xl object-cover border-2 border-[#D9A9FF] shadow-lg shrink-0"
                     />
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="text-[9px] font-mono font-black uppercase text-[#E9C349] bg-[#E9C349]/10 px-2 py-0.5 rounded border border-[#E9C349]/20">
+                        <span className="text-[9px] font-mono font-black uppercase text-[#D9A9FF] bg-[#D9A9FF]/10 px-2 py-0.5 rounded border border-[#D9A9FF]/20">
                           EJEMPLO PRÁCTICO
                         </span>
                         <span className="text-[10px] font-mono text-emerald-400 font-bold">$15 USD / MES</span>
@@ -2542,7 +3090,7 @@ Semana 3-4 (Progresión):
                     className={`px-6 py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider transition-all shadow-xl shrink-0 flex items-center gap-2 active:scale-95 ${
                       subscribedInstructors.includes('Brandon Hermoso')
                         ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white border border-emerald-400 shadow-emerald-500/20'
-                        : 'bg-gradient-to-r from-[#2c2212] via-[#E9C349] to-[#2c2212] hover:opacity-95 text-black border border-[#E9C349] shadow-[#E9C349]/20'
+                        : 'bg-gradient-to-r from-[#2c2212] via-[#D9A9FF] to-[#2c2212] hover:opacity-95 text-black border border-[#D9A9FF] shadow-[#D9A9FF]/20'
                     }`}
                   >
                     {subscribedInstructors.includes('Brandon Hermoso') ? (
@@ -2562,6 +3110,286 @@ Semana 3-4 (Progresión):
             </motion.div>
           )}
 
+          {activeSubTab === 'documents' && (
+            <motion.div
+              key="documents-panel"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              className="space-y-6"
+            >
+              {/* Header Banner */}
+              <div className="p-6 rounded-3xl bg-gradient-to-r from-[#18112b] via-[#120a21] to-[#0d0718] border border-[#D9A9FF]/30 shadow-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-2xl bg-[#D9A9FF]/10 border border-[#D9A9FF]/40 flex items-center justify-center text-[#D9A9FF]">
+                      <FileText className="w-5 h-5" />
+                    </div>
+                    <h2 className="text-lg sm:text-2xl font-black tracking-wider text-white uppercase font-mono">
+                      GESTORÍA DE DOCUMENTOS, GUÍAS & PLANIFICACIONES (PDF)
+                    </h2>
+                  </div>
+                  <p className="text-xs text-slate-300 font-sans leading-relaxed max-w-2xl">
+                    Sube y distribuye <strong className="text-[#D9A9FF]">Guías y manuales de técnica en PDF</strong> (ej: Cuaderno de Práctica Biomecánica para prevención de lesiones de hombro y codo) y <strong className="text-[#D9A9FF]">Planificaciones de entrenamiento</strong> (plantillas imprimibles o interactivas para registro semanal de BPM).
+                  </p>
+                </div>
+
+                {onOpenDocsModal && (
+                  <button
+                    onClick={onOpenDocsModal}
+                    className="px-4 py-2.5 rounded-2xl bg-[#4285F4] hover:bg-blue-600 text-white font-black text-xs uppercase flex items-center gap-2 shadow-lg transition-all shrink-0 cursor-pointer"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>Redactar en Google Docs</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Document Publisher & List Container */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                {/* LEFT COLUMN: Upload / Create Document Form (5 cols) */}
+                <div className="lg:col-span-5 bg-[#130f21] border border-[#D9A9FF]/30 rounded-3xl p-5 sm:p-6 space-y-5 shadow-2xl">
+                  <div className="flex items-center gap-2 border-b border-white/10 pb-3">
+                    <Upload className="w-4 h-4 text-[#D9A9FF]" />
+                    <h3 className="text-xs font-mono font-bold text-white uppercase tracking-wider">
+                      Publicar Nuevo Documento o PDF
+                    </h3>
+                  </div>
+
+                  <form onSubmit={handlePublishDocument} className="space-y-4">
+                    {/* Category Selection Buttons */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-mono font-bold text-slate-300 uppercase block">
+                        Categoría del Recurso
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDocCategory('guia_pdf');
+                            setDocFormat('PDF - Guía de Técnica');
+                          }}
+                          className={`p-3 rounded-2xl border text-left flex flex-col gap-1 transition-all cursor-pointer ${
+                            docCategory === 'guia_pdf'
+                              ? 'bg-[#D9A9FF]/20 border-[#D9A9FF] text-white shadow-md'
+                              : 'bg-[#0a0814] border-white/10 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <FileText className="w-4 h-4 text-[#D9A9FF]" />
+                            <span className="text-[10px] font-black uppercase">Guías & Manuales PDF</span>
+                          </div>
+                          <span className="text-[8px] text-slate-400 leading-tight">Biomecánica, anatomía y prevención.</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDocCategory('planificacion_bpm');
+                            setDocFormat('Plantilla Imprimible & Digital');
+                          }}
+                          className={`p-3 rounded-2xl border text-left flex flex-col gap-1 transition-all cursor-pointer ${
+                            docCategory === 'planificacion_bpm'
+                              ? 'bg-purple-500/20 border-purple-400 text-white shadow-md'
+                              : 'bg-[#0a0814] border-white/10 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <Printer className="w-4 h-4 text-purple-400" />
+                            <span className="text-[10px] font-black uppercase">Planificación BPM</span>
+                          </div>
+                          <span className="text-[8px] text-slate-400 leading-tight">Plantillas de rutinas e hitos semanales.</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Document Title */}
+                    <div>
+                      <label className="text-[10px] font-mono font-bold text-slate-300 uppercase block mb-1">
+                        Título del Documento *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={docTitle}
+                        onChange={e => setDocTitle(e.target.value)}
+                        placeholder={docCategory === 'guia_pdf' ? 'ej: Cuaderno de Práctica Biomecánica para prevención de lesiones de hombro y codo' : 'ej: Planificación Semanal de Rutinas BPM e Incrementos de Tempo'}
+                        className="w-full px-3.5 py-2.5 rounded-2xl bg-[#0a0814] border border-white/20 text-white font-bold text-xs focus:outline-none focus:border-[#D9A9FF]"
+                      />
+                    </div>
+
+                    {/* Format / Specification */}
+                    <div>
+                      <label className="text-[10px] font-mono font-bold text-slate-300 uppercase block mb-1">
+                        Especificación de Formato / Páginas
+                      </label>
+                      <input
+                        type="text"
+                        value={docFormat}
+                        onChange={e => setDocFormat(e.target.value)}
+                        placeholder="ej: PDF - 18 Páginas (Biomecánica) o Plantilla Imprimible"
+                        className="w-full px-3.5 py-2.5 rounded-2xl bg-[#0a0814] border border-white/20 text-white text-xs focus:outline-none focus:border-[#D9A9FF]"
+                      />
+                    </div>
+
+                    {/* Description */}
+                    <div>
+                      <label className="text-[10px] font-mono font-bold text-slate-300 uppercase block mb-1">
+                        Descripción Pedagógica / Instrucciones
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={docDescription}
+                        onChange={e => setDocDescription(e.target.value)}
+                        placeholder="Explica qué aprenderán tus alumnas con este documento y cómo deben registrar sus rutinas de BPM..."
+                        className="w-full px-3.5 py-2.5 rounded-2xl bg-[#0a0814] border border-white/20 text-slate-200 text-xs focus:outline-none focus:border-[#D9A9FF] resize-none leading-relaxed"
+                      />
+                    </div>
+
+                    {/* PDF File Upload */}
+                    <div>
+                      <label className="text-[10px] font-mono font-bold text-slate-300 uppercase block mb-1">
+                        Archivo PDF (.pdf) o Material Adjunto
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <label className="flex-1 px-3.5 py-3 rounded-2xl bg-[#0a0814] border border-dashed border-white/30 hover:border-[#D9A9FF] text-center cursor-pointer transition-all flex items-center justify-center gap-2">
+                          <Upload className="w-4 h-4 text-[#D9A9FF]" />
+                          <span className="text-xs font-bold text-slate-300 truncate">
+                            {docFileName ? docFileName : 'Subir PDF desde este dispositivo'}
+                          </span>
+                          <input
+                            type="file"
+                            accept=".pdf,application/pdf"
+                            onChange={handleFileUploadPDF}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                      {docFileUrl && (
+                        <p className="text-[9px] text-emerald-400 font-mono mt-1 flex items-center gap-1">
+                          <Check className="w-3 h-3" /> Archivo PDF listo para cargar
+                        </p>
+                      )}
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isUploadingDoc}
+                      className="w-full py-3 rounded-2xl bg-[#D9A9FF] hover:bg-[#B87CFF] text-black font-black text-xs uppercase tracking-wider transition-all shadow-lg cursor-pointer active:scale-98"
+                    >
+                      {isUploadingDoc ? 'Procesando PDF...' : 'Publicar Documento para Alumnas'}
+                    </button>
+                  </form>
+                </div>
+
+                {/* RIGHT COLUMN: Published Documents List (7 cols) */}
+                <div className="lg:col-span-7 space-y-4">
+                  <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                    <h3 className="text-xs font-mono font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                      <BookMarked className="w-4 h-4 text-[#D9A9FF]" />
+                      Documentos Publicados en la Academia ({instructorDocuments.length})
+                    </h3>
+                    <span className="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
+                      DISPONIBLES PARA ALUMNAS
+                    </span>
+                  </div>
+
+                  {instructorDocuments.length === 0 ? (
+                    <div className="bg-[#121212] border border-white/10 rounded-3xl p-8 text-center space-y-2">
+                      <FileText className="w-10 h-10 text-slate-500 mx-auto" />
+                      <p className="text-xs text-slate-300 font-bold">No has subido documentos aún.</p>
+                      <p className="text-[11px] text-slate-500">Completa el formulario a la izquierda para subir tu primera guía o plantilla.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4">
+                      {instructorDocuments.map(doc => (
+                        <div
+                          key={doc.id}
+                          className="bg-[#130f21] border border-white/10 hover:border-[#D9A9FF]/50 rounded-3xl p-5 space-y-3 transition-all relative overflow-hidden shadow-xl group"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3 min-w-0">
+                              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border ${
+                                doc.category === 'guia_pdf'
+                                  ? 'bg-[#D9A9FF]/10 border-[#D9A9FF]/40 text-[#D9A9FF]'
+                                  : 'bg-purple-500/10 border-purple-400/40 text-purple-400'
+                              }`}>
+                                {doc.category === 'guia_pdf' ? <FileText className="w-5 h-5" /> : <Printer className="w-5 h-5" />}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className={`text-[9px] font-mono font-bold uppercase px-2 py-0.5 rounded border ${
+                                    doc.category === 'guia_pdf'
+                                      ? 'bg-[#D9A9FF]/10 text-[#D9A9FF] border-[#D9A9FF]/30'
+                                      : 'bg-purple-500/10 text-purple-300 border-purple-500/30'
+                                  }`}>
+                                    {doc.categoryLabel}
+                                  </span>
+                                  <span className="text-[9px] font-mono text-slate-400 bg-white/5 px-2 py-0.5 rounded border border-white/5">
+                                    {doc.format}
+                                  </span>
+                                </div>
+                                <h4 className="text-sm font-extrabold text-white mt-1 group-hover:text-[#D9A9FF] transition-colors leading-snug">
+                                  {doc.title}
+                                </h4>
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={() => handleDeleteDocument(doc.id)}
+                              className="p-1.5 text-slate-500 hover:text-red-400 rounded-lg hover:bg-white/5 transition-colors shrink-0"
+                              title="Eliminar documento"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          <p className="text-xs text-slate-300 leading-relaxed font-sans">
+                            {doc.description}
+                          </p>
+
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-white/10 text-[10px] font-mono text-slate-400">
+                            <span className="flex items-center gap-1.5">
+                              <span>Fecha: {doc.createdAt}</span>
+                              <span>•</span>
+                              <span>Descargas: {doc.downloadsCount}</span>
+                            </span>
+
+                            <div className="flex items-center gap-2">
+                              <a
+                                href={doc.fileUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                download={doc.fileName || true}
+                                className="px-3.5 py-1.5 rounded-xl bg-[#D9A9FF] text-black font-black uppercase text-[10px] hover:bg-[#B87CFF] transition-all flex items-center gap-1.5 shadow active:scale-95 cursor-pointer"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span>Descargar PDF</span>
+                              </a>
+
+                              <button
+                                onClick={() => {
+                                  const win = window.open(doc.fileUrl, '_blank');
+                                  if (win) win.focus();
+                                }}
+                                className="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold uppercase text-[10px] transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                              >
+                                <Printer className="w-3.5 h-3.5" />
+                                <span>Imprimir / Ver</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            </motion.div>
+          )}
+
           {activeSubTab === 'students' && (
             <motion.div
               key="students-panel"
@@ -2573,11 +3401,11 @@ Semana 3-4 (Progresión):
               {/* Top AI Onboarding Engine Banner */}
               <div className="p-5 rounded-3xl bg-gradient-to-r from-[#1E0D1B] via-[#140813] to-[#0D0914] border border-[#3A223B] shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3.5">
-                  <div className="p-3 rounded-2xl bg-[#9A2B3C]/20 border border-[#9A2B3C]/40 text-[#E9C349] shrink-0">
+                  <div className="p-3 rounded-2xl bg-[#C23E9E]/20 border border-[#C23E9E]/40 text-[#D9A9FF] shrink-0">
                     <Sparkles className="w-6 h-6 animate-pulse" />
                   </div>
                   <div>
-                    <div className="text-[10px] font-mono font-bold text-[#E9C349] uppercase tracking-widest flex items-center gap-1.5">
+                    <div className="text-[10px] font-mono font-bold text-[#D9A9FF] uppercase tracking-widest flex items-center gap-1.5">
                       <span>MOTOR IA PEDAGÓGICO DE ONBOARDING</span>
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
                     </div>
@@ -2592,9 +3420,9 @@ Semana 3-4 (Progresión):
 
                 <button
                   onClick={() => setShowQuestionnaireModal(true)}
-                  className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-[#9A2B3C] via-[#B8344B] to-[#E9C349] text-white text-xs font-mono font-bold uppercase tracking-wider shadow-lg hover:brightness-110 active:scale-95 transition-all flex items-center gap-2 shrink-0 self-start sm:self-auto"
+                  className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-[#C23E9E] via-[#C23FA0] to-[#D9A9FF] text-white text-xs font-mono font-bold uppercase tracking-wider shadow-lg hover:brightness-110 active:scale-95 transition-all flex items-center gap-2 shrink-0 self-start sm:self-auto"
                 >
-                  <PlusCircle className="w-4 h-4 text-[#E9C349]" />
+                  <PlusCircle className="w-4 h-4 text-[#D9A9FF]" />
                   <span>Nuevo Diagnóstico IA</span>
                 </button>
               </div>
@@ -2604,11 +3432,11 @@ Semana 3-4 (Progresión):
                 <div className="relative p-6 rounded-3xl bg-[#0E0B12] border border-[#3D2948] shadow-2xl space-y-4">
                   <div className="flex items-center justify-between border-b border-[#2B1B33] pb-4">
                     <div className="flex items-center gap-2.5">
-                      <div className="p-2 rounded-xl bg-[#9A2B3C]/20 text-[#E9C349]">
+                      <div className="p-2 rounded-xl bg-[#C23E9E]/20 text-[#D9A9FF]">
                         <UserIcon className="w-5 h-5" />
                       </div>
                       <div>
-                        <span className="text-[10px] font-mono text-[#E9C349] font-bold uppercase tracking-widest">
+                        <span className="text-[10px] font-mono text-[#D9A9FF] font-bold uppercase tracking-widest">
                           CÁTEDRA DEL INSTRUCTOR • EXPEDIENTE
                         </span>
                         <h4 className="text-base font-bold text-white">
@@ -2633,13 +3461,52 @@ Semana 3-4 (Progresión):
                 </div>
               )}
 
+              {/* Active Filtered Student Alert Banner inside Students tab */}
+              {selectedStudent && (
+                <div className="p-4 rounded-2xl bg-pink-950/40 border border-pink-500/40 flex flex-wrap items-center justify-between gap-3 shadow-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-pink-500/20 border border-pink-400/40 text-pink-300 flex items-center justify-center font-bold text-xs">
+                      {selectedStudent.name.substring(0, 2).toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-mono font-bold text-pink-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <UserCheck className="w-3.5 h-3.5" />
+                        <span>ESTUDIANTE SELECCIONADO PARA ESTA SESIÓN</span>
+                      </div>
+                      <h4 className="text-sm font-bold text-white">
+                        {selectedStudent.name} <span className="text-slate-400 font-normal font-mono text-xs">({selectedStudent.email})</span>
+                      </h4>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleOpenStudentPlan(selectedStudent)}
+                      className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-pink-600 to-purple-600 hover:brightness-110 text-white font-mono text-xs font-bold transition-all flex items-center gap-1.5 shadow-md"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-[#D9A9FF]" />
+                      <span>Ver Plan Onboarding IA</span>
+                    </button>
+                    <button
+                      onClick={() => handleSelectStudentForFilter(null)}
+                      className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 text-xs font-bold transition-all"
+                    >
+                      Ver Todos
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Table of Students */}
               <div className="bg-[#121212] border border-white/5 rounded-[24px] p-5 sm:p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-mono tracking-wider text-[#8A8A8A] font-bold uppercase">
-                    {language === 'es' ? 'ALUMNOS VINCULADOS A TUS CÁTEDRAS' : 'STUDENTS LINKED TO YOUR CLASSES'}
-                  </h3>
-                  <span className="text-xs text-[#E9C349] bg-[#E9C349]/10 px-2 py-0.5 rounded border border-[#E9C349]/20 font-bold">
+                  <div>
+                    <h3 className="text-sm font-mono tracking-wider text-[#8A8A8A] font-bold uppercase">
+                      {language === 'es' ? 'ALUMNOS VINCULADOS A TUS CÁTEDRAS' : 'STUDENTS LINKED TO YOUR CLASSES'}
+                    </h3>
+                    <p className="text-[11px] text-slate-400">Selecciona un alumno para mantener su seguimiento activo al cambiar de pestaña</p>
+                  </div>
+                  <span className="text-xs text-[#D9A9FF] bg-[#D9A9FF]/10 px-2 py-0.5 rounded border border-[#D9A9FF]/20 font-bold">
                     {students.length} Alumnos
                   </span>
                 </div>
@@ -2648,6 +3515,7 @@ Semana 3-4 (Progresión):
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
                       <tr className="border-b border-white/5 pb-2 text-[#8A8A8A] font-black font-mono">
+                        <th className="pb-3 pr-2">ESTADO / SELECCIÓN</th>
                         <th className="pb-3 pr-2">{t.tableStudent}</th>
                         <th className="pb-3 px-2">{t.tableLevel}</th>
                         <th className="pb-3 px-2">EMAIL</th>
@@ -2657,48 +3525,77 @@ Semana 3-4 (Progresión):
                       </tr>
                     </thead>
                     <tbody>
-                      {(students || []).map(std => (
-                        <tr key={std.id} className="border-b border-white/5 hover:bg-white/5 transition-all">
-                          <td className="py-3 pr-2 font-bold text-white flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-full bg-white/5 flex items-center justify-center font-bold border border-white/10 text-[#E9C349] text-[10px]">
-                              {(std.name || 'WA').substring(0, 2).toUpperCase()}
-                            </div>
-                            {std.name}
-                          </td>
-                          <td className="py-3 px-2 font-semibold">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              std.level === 'Avanzado' ? 'bg-[#9A2B3C]/10 text-red-400 border border-[#9A2B3C]/20' :
-                              std.level === 'Intermedio' ? 'bg-[#E9C349]/10 text-[#E9C349] border border-[#E9C349]/20' :
-                              'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
-                            }`}>
-                              {std.level}
-                            </span>
-                          </td>
-                          <td className="py-3 px-2 font-mono text-[#8A8A8A]">
-                            {std.email}
-                          </td>
-                          <td className="py-3 px-2 text-[#C2C7D1]">
-                            {std.lastActive}
-                          </td>
-                          <td className="py-3 pl-2 text-right">
-                            <button
-                              onClick={() => handleOpenStudentPlan(std)}
-                              className="px-3 py-1 rounded-lg bg-[#9A2B3C]/20 hover:bg-[#9A2B3C]/40 border border-[#9A2B3C]/40 text-[#E9C349] text-[10px] font-mono font-bold transition-all flex items-center gap-1.5 ml-auto"
-                            >
-                              <Sparkles className="w-3 h-3 text-[#E9C349]" />
-                              <span>Plan Onboarding IA</span>
-                            </button>
-                          </td>
-                          <td className="py-3 pl-2 text-right">
-                            <button
-                              onClick={() => handleAlertStudent(std.name)}
-                              className="px-3 py-1 rounded-lg bg-white/5 hover:bg-[#E9C349]/20 border border-white/10 hover:border-[#E9C349]/30 text-[#EDEFF4] text-[10px] font-bold transition-all"
-                            >
-                              {t.alertStudent}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {(students || []).map(std => {
+                        const isSel = selectedStudentUid === std.id;
+                        return (
+                          <tr 
+                            key={std.id} 
+                            className={`border-b border-white/5 transition-all ${
+                              isSel ? 'bg-pink-500/15 border-pink-500/30' : 'hover:bg-white/5'
+                            }`}
+                          >
+                            <td className="py-3 pr-2">
+                              <button
+                                onClick={() => handleSelectStudentForFilter(isSel ? null : std.id)}
+                                className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold border transition-all flex items-center gap-1 ${
+                                  isSel
+                                    ? 'bg-pink-600 border-pink-400 text-white shadow-sm'
+                                    : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-400 hover:text-white'
+                                }`}
+                              >
+                                {isSel ? (
+                                  <>
+                                    <Check className="w-3 h-3 text-pink-200" />
+                                    <span>Filtrado</span>
+                                  </>
+                                ) : (
+                                  <span>Filtrar</span>
+                                )}
+                              </button>
+                            </td>
+                            <td className="py-3 pr-2 font-bold text-white flex items-center gap-2">
+                              <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold border text-[10px] ${
+                                isSel ? 'bg-pink-500 border-pink-400 text-white' : 'bg-white/5 border-white/10 text-[#D9A9FF]'
+                              }`}>
+                                {(std.name || 'WA').substring(0, 2).toUpperCase()}
+                              </div>
+                              <span className={isSel ? 'text-pink-200 font-extrabold' : ''}>{std.name}</span>
+                            </td>
+                            <td className="py-3 px-2 font-semibold">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                std.level === 'Avanzado' ? 'bg-[#C23E9E]/10 text-red-400 border border-[#C23E9E]/20' :
+                                std.level === 'Intermedio' ? 'bg-[#D9A9FF]/10 text-[#D9A9FF] border border-[#D9A9FF]/20' :
+                                'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
+                              }`}>
+                                {std.level}
+                              </span>
+                            </td>
+                            <td className="py-3 px-2 font-mono text-[#8A8A8A]">
+                              {std.email}
+                            </td>
+                            <td className="py-3 px-2 text-[#C2C7D1]">
+                              {std.lastActive}
+                            </td>
+                            <td className="py-3 pl-2 text-right">
+                              <button
+                                onClick={() => handleOpenStudentPlan(std)}
+                                className="px-3 py-1 rounded-lg bg-[#C23E9E]/20 hover:bg-[#C23E9E]/40 border border-[#C23E9E]/40 text-[#D9A9FF] text-[10px] font-mono font-bold transition-all flex items-center gap-1.5 ml-auto"
+                              >
+                                <Sparkles className="w-3 h-3 text-[#D9A9FF]" />
+                                <span>Plan Onboarding IA</span>
+                              </button>
+                            </td>
+                            <td className="py-3 pl-2 text-right">
+                              <button
+                                onClick={() => handleAlertStudent(std.name)}
+                                className="px-3 py-1 rounded-lg bg-white/5 hover:bg-[#D9A9FF]/20 border border-white/10 hover:border-[#D9A9FF]/30 text-[#EDEFF4] text-[10px] font-bold transition-all"
+                              >
+                                {t.alertStudent}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -2712,136 +3609,1251 @@ Semana 3-4 (Progresión):
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
-              className="grid grid-cols-1 lg:grid-cols-3 gap-8"
+              className="space-y-6"
             >
-              {/* Add Class / Workshop Event form */}
-              <div className="lg:col-span-2 bg-[#121212] border border-white/5 rounded-[24px] p-6 space-y-4">
-                <h3 className="text-base font-black text-white flex items-center gap-2 pb-3 border-b border-white/5">
-                  <Calendar className="w-5 h-5 text-[#E9C349]" />
-                  {t.addClassEvent}
-                </h3>
-
-                <form onSubmit={handleScheduleClass} className="space-y-4">
+              {/* Instructor Class Panel Header & Sub-Tab Navigation */}
+              <div className="bg-[#121212] border border-white/10 rounded-[28px] p-5 sm:p-6 shadow-2xl relative overflow-hidden">
+                <div className="absolute right-0 top-0 w-64 h-64 bg-[#D9A9FF]/5 rounded-full blur-3xl pointer-events-none" />
+                
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-white/5 pb-5">
                   <div>
-                    <label className="block text-[10px] font-mono text-[#8A8A8A] font-bold uppercase mb-1.5">
-                      {language === 'es' ? 'Nombre de la Clase / Taller' : 'Class Title'}
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={classTitle}
-                      onChange={e => setClassTitle(e.target.value)}
-                      placeholder={language === 'es' ? "ej: Entrenamiento de Aceleración Waack" : "e.g., Extreme Arm speed live drill"}
-                      className="w-full px-4 py-3 rounded-xl bg-[#161616] border border-white/10 text-white font-bold text-xs focus:outline-none focus:border-[#E9C349] transition-all"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-mono text-[#8A8A8A] font-bold uppercase mb-1.5">
-                        {t.classDate}
-                      </label>
-                      <input
-                        type="date"
-                        required
-                        value={classDate}
-                        onChange={e => setClassDate(e.target.value)}
-                        className="w-full px-4 py-3 rounded-xl bg-[#161616] border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-[#E9C349] transition-all"
-                      />
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="px-2.5 py-0.5 rounded-full bg-[#D9A9FF]/10 border border-[#D9A9FF]/30 text-[#D9A9FF] text-[10px] font-mono font-black uppercase tracking-wider flex items-center gap-1.5">
+                        <GraduationCap className="w-3.5 h-3.5" />
+                        CENTRO DE CONTROL DOCENTE
+                      </span>
+                      {selectedStudent && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-pink-500/20 border border-pink-500/40 text-pink-300 text-[10px] font-mono font-bold flex items-center gap-1">
+                          <UserCheck className="w-3 h-3" />
+                          Enfoque: {selectedStudent.name}
+                        </span>
+                      )}
                     </div>
-
-                    <div>
-                      <label className="block text-[10px] font-mono text-[#8A8A8A] font-bold uppercase mb-1.5">
-                        {t.classTime}
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={classTime}
-                        onChange={e => setClassTime(e.target.value)}
-                        placeholder="19:30"
-                        className="w-full px-4 py-3 rounded-xl bg-[#161616] border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-[#E9C349] transition-all"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-mono text-[#8A8A8A] font-bold uppercase mb-1.5">
-                        {t.classDuration}
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={classDuration}
-                        onChange={e => setClassDuration(e.target.value)}
-                        placeholder="90 min"
-                        className="w-full px-4 py-3 rounded-xl bg-[#161616] border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-[#E9C349] transition-all"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between items-center mb-1.5">
-                      <label className="block text-[10px] font-mono text-[#8A8A8A] font-bold uppercase">
-                        {t.classMeet}
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => setClassMeet(generateGoogleMeetRoomUrl(classTitle || 'live'))}
-                        className="text-[9px] font-mono font-bold text-blue-400 hover:text-blue-300 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded transition-all flex items-center gap-1 active:scale-95"
-                      >
-                        <Video className="w-3 h-3 text-blue-400" />
-                        AUTO-GENERAR REUNIÓN GOOGLE MEET
-                      </button>
-                    </div>
-                    <input
-                      type="url"
-                      value={classMeet}
-                      onChange={e => setClassMeet(e.target.value)}
-                      placeholder="https://meet.google.com/abc-defg-hij"
-                      className="w-full px-4 py-3 rounded-xl bg-[#161616] border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-[#E9C349] transition-all"
-                    />
-                    <p className="text-[10px] text-slate-400 font-medium mt-1">
-                      Si lo dejas en blanco, se creará automáticamente una sala de Google Meet oficial para la sesión.
+                    <h2 className="text-xl sm:text-2xl font-black text-white uppercase tracking-tight">
+                      {language === 'es' ? 'Gestión de Cátedras, Clases & Evaluaciones' : 'Instructor Class & Curriculum Control'}
+                    </h2>
+                    <p className="text-xs text-slate-400 font-medium mt-1">
+                      {language === 'es' 
+                        ? 'Herramientas pedagógicas exclusivas para programar sesiones en vivo, asignar currículo, dirigir prácticas con metrónomo y calificar tareas de alumnos.'
+                        : 'Exclusive instructor suite to schedule live workshops, manage curriculum assignments, conduct live metronome drills, and grade student submissions.'}
                     </p>
                   </div>
 
-                  <button
-                    type="submit"
-                    className="w-full py-3 px-5 rounded-xl bg-[#E9C349] hover:bg-[#ffdf6b] text-black font-black text-xs uppercase tracking-wider transition-all shadow-md active:scale-95"
-                  >
-                    {language === 'es' ? 'Programar e Inyectar en Agenda' : 'Inject Class to Calendar'}
-                  </button>
-                </form>
-              </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => setClassPanelSubTab('schedule')}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-mono font-bold uppercase transition-all flex items-center gap-1.5 ${
+                        classPanelSubTab === 'schedule'
+                          ? 'bg-[#D9A9FF] text-black shadow-lg font-black'
+                          : 'bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10'
+                      }`}
+                    >
+                      <Calendar className="w-3.5 h-3.5" />
+                      <span>1. Sesiones en Vivo</span>
+                    </button>
 
-              {/* Current calendar classes taught by this instructor */}
-              <div className="bg-[#121212] border border-white/5 rounded-[24px] p-6 space-y-4">
-                <h3 className="text-sm font-mono tracking-wider text-[#8A8A8A] font-bold uppercase pb-3 border-b border-white/5">
-                  {language === 'es' ? 'Tus Clases en Agenda' : 'Your Scheduled Events'}
-                </h3>
+                    <button
+                      onClick={() => setClassPanelSubTab('curriculum')}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-mono font-bold uppercase transition-all flex items-center gap-1.5 ${
+                        classPanelSubTab === 'curriculum'
+                          ? 'bg-[#D9A9FF] text-black shadow-lg font-black'
+                          : 'bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10'
+                      }`}
+                    >
+                      <Layers className="w-3.5 h-3.5" />
+                      <span>2. Currículo & Asignaciones</span>
+                    </button>
 
-                <div className="space-y-3 max-h-[400px] overflow-y-auto">
-                  {(events || []).filter(ev => ev.instructor === currentUser.name || (ev.title && ev.title.includes('[Taller]'))).map(ev => (
-                    <div key={ev.id} className="p-4 bg-[#161616] border border-white/5 rounded-xl space-y-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] font-mono text-[#E9C349] font-bold">{ev.date} @ {ev.time}</span>
-                        <span className="text-[9px] font-mono font-bold bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20">
-                          {ev.rsvpCount} Alumnos RSVP
-                        </span>
+                    <button
+                      onClick={() => setClassPanelSubTab('live_control')}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-mono font-bold uppercase transition-all flex items-center gap-1.5 ${
+                        classPanelSubTab === 'live_control'
+                          ? 'bg-[#D9A9FF] text-black shadow-lg font-black'
+                          : 'bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10'
+                      }`}
+                    >
+                      <Sliders className="w-3.5 h-3.5" />
+                      <span>3. Pizarra & Metrónomo</span>
+                    </button>
+
+                    <button
+                      onClick={() => setClassPanelSubTab('submissions')}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-mono font-bold uppercase transition-all flex items-center gap-1.5 relative ${
+                        classPanelSubTab === 'submissions'
+                          ? 'bg-[#D9A9FF] text-black shadow-lg font-black'
+                          : 'bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10'
+                      }`}
+                    >
+                      <ClipboardCheck className="w-3.5 h-3.5" />
+                      <span>4. Tareas & Notas</span>
+                      {studentSubmissions.filter(s => s.status === 'pending').length > 0 && (
+                        <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse absolute -top-1 -right-1" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Quick Summary Stats Bar */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4">
+                  <div className="p-3 rounded-2xl bg-white/5 border border-white/5 flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-[#D9A9FF]/10 text-[#D9A9FF] flex items-center justify-center font-bold">
+                      <Calendar className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-mono text-slate-400 font-bold uppercase">Clases en Agenda</div>
+                      <div className="text-sm font-black text-white">
+                        {(events || []).filter(ev => ev && (ev.instructor === currentUser.name || (ev.title && ev.title.includes('[Taller]')))).length} Sesiones
                       </div>
-                      <h4 className="text-xs font-black text-white">{ev.title}</h4>
-                      <p className="text-[11px] text-[#8A8A8A] font-semibold">{ev.duration} • {ev.instructor}</p>
                     </div>
-                  ))}
+                  </div>
 
-                  {(events || []).filter(ev => ev && (ev.instructor === currentUser.name || (ev.title && ev.title.includes('[Taller]')))).length === 0 && (
-                    <div className="py-12 text-center text-[#8A8A8A] text-xs font-mono">
-                      [NO ACTIVE SESSIONS FOUND]
+                  <div className="p-3 rounded-2xl bg-white/5 border border-white/5 flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-purple-500/10 text-purple-300 flex items-center justify-center font-bold">
+                      <Users className="w-4 h-4" />
                     </div>
-                  )}
+                    <div>
+                      <div className="text-[10px] font-mono text-slate-400 font-bold uppercase">Alumnos en Cátedra</div>
+                      <div className="text-sm font-black text-white">{students.length} Inscritos</div>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-2xl bg-white/5 border border-white/5 flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold">
+                      <BookOpen className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-mono text-slate-400 font-bold uppercase">Lecciones Catálogo</div>
+                      <div className="text-sm font-black text-white">{(lessons || []).length || 12} Lecciones</div>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-2xl bg-white/5 border border-white/5 flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-pink-500/10 text-pink-300 flex items-center justify-center font-bold">
+                      <ClipboardCheck className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-mono text-slate-400 font-bold uppercase">Revisiones Pendientes</div>
+                      <div className="text-sm font-black text-white">
+                        {studentSubmissions.filter(s => s.status === 'pending').length} Entregas
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
+
+              {/* 1. SUB-TAB: SCHEDULE & LIVE SESSIONS */}
+              {classPanelSubTab === 'schedule' && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  {/* Left: Schedule Form */}
+                  <div className="lg:col-span-2 bg-[#121212] border border-white/5 rounded-[24px] p-6 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-white/5">
+                      <h3 className="text-base font-black text-white flex items-center gap-2">
+                        <Calendar className="w-5 h-5 text-[#D9A9FF]" />
+                        Programar Nueva Sesión en Directo / Taller Magistral
+                      </h3>
+                      {selectedStudent && (
+                        <div className="px-2.5 py-1 rounded-lg bg-pink-500/20 border border-pink-500/40 text-pink-200 text-[10px] font-mono font-bold flex items-center gap-1.5">
+                          <UserCheck className="w-3 h-3 text-pink-300" />
+                          <span>Alumno Enfocado: {selectedStudent.name}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <form onSubmit={handleScheduleClass} className="space-y-4">
+                      {/* Tipo de Clase / Taller */}
+                      <div>
+                        <label className="block text-[10px] font-mono text-[#8A8A8A] font-bold uppercase mb-1.5">
+                          Tipo de Sesión Pedagógica
+                        </label>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {[
+                            'Taller Intensivo de Técnica',
+                            'Masterclass Magistral',
+                            'Sesión 1-a-1 de Corrección',
+                            'Laboratorio de Freestyle'
+                          ].map(tType => (
+                            <button
+                              type="button"
+                              key={tType}
+                              onClick={() => setClassEventType(tType as any)}
+                              className={`p-2.5 rounded-xl border text-[11px] font-bold transition-all text-left ${
+                                classEventType === tType
+                                  ? 'bg-[#D9A9FF]/15 border-[#D9A9FF] text-white shadow-sm'
+                                  : 'bg-[#161616] border-white/5 text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              {tType}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Título de la Clase */}
+                      <div>
+                        <label className="block text-[10px] font-mono text-[#8A8A8A] font-bold uppercase mb-1.5">
+                          {language === 'es' ? 'Nombre o Tema Central de la Clase' : 'Class Title'}
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={classTitle}
+                          onChange={e => setClassTitle(e.target.value)}
+                          placeholder={language === 'es' ? "ej: Aceleración de Rolls & Limpieza Angular en Posing" : "e.g., Extreme Arm speed live drill"}
+                          className="w-full px-4 py-3 rounded-xl bg-[#161616] border border-white/10 text-white font-bold text-xs focus:outline-none focus:border-[#D9A9FF] transition-all"
+                        />
+                      </div>
+
+                      {/* Fecha, Hora, Duración */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-[10px] font-mono text-[#8A8A8A] font-bold uppercase mb-1.5">
+                            {t.classDate}
+                          </label>
+                          <input
+                            type="date"
+                            required
+                            value={classDate}
+                            onChange={e => setClassDate(e.target.value)}
+                            className="w-full px-4 py-3 rounded-xl bg-[#161616] border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-[#D9A9FF] transition-all"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-mono text-[#8A8A8A] font-bold uppercase mb-1.5">
+                            {t.classTime}
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={classTime}
+                            onChange={e => setClassTime(e.target.value)}
+                            placeholder="19:30"
+                            className="w-full px-4 py-3 rounded-xl bg-[#161616] border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-[#D9A9FF] transition-all"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-mono text-[#8A8A8A] font-bold uppercase mb-1.5">
+                            {t.classDuration}
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={classDuration}
+                            onChange={e => setClassDuration(e.target.value)}
+                            placeholder="90 min"
+                            className="w-full px-4 py-3 rounded-xl bg-[#161616] border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-[#D9A9FF] transition-all"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Audiencia / Destinatario */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[10px] font-mono text-[#8A8A8A] font-bold uppercase mb-1.5">
+                            Destinatarios de la Clase
+                          </label>
+                          <select
+                            value={classTargetAudience}
+                            onChange={e => setClassTargetAudience(e.target.value as any)}
+                            className="w-full px-4 py-2.5 rounded-xl bg-[#161616] border border-white/10 text-white font-bold text-xs focus:outline-none focus:border-[#D9A9FF]"
+                          >
+                            <option value="all">Toda la Cátedra ({students.length} Alumnos)</option>
+                            {selectedStudent && (
+                              <option value="selected_only">Exclusivo para {selectedStudent.name} (1 a 1)</option>
+                            )}
+                            <option value="level_specific">Alumnos por Nivel Específico</option>
+                          </select>
+                        </div>
+
+                        {classTargetAudience === 'level_specific' && (
+                          <div>
+                            <label className="block text-[10px] font-mono text-[#8A8A8A] font-bold uppercase mb-1.5">
+                              Nivel Requerido
+                            </label>
+                            <select
+                              value={classTargetLevel}
+                              onChange={e => setClassTargetLevel(e.target.value as any)}
+                              className="w-full px-4 py-2.5 rounded-xl bg-[#161616] border border-white/10 text-white font-bold text-xs focus:outline-none focus:border-[#D9A9FF]"
+                            >
+                              <option value="all">Todos los Niveles</option>
+                              <option value="Principiante">Nivel Principiante</option>
+                              <option value="Intermedio">Nivel Intermedio</option>
+                              <option value="Avanzado">Nivel Avanzado</option>
+                            </select>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Sala de Google Meet */}
+                      <div>
+                        <div className="flex justify-between items-center mb-1.5">
+                          <label className="block text-[10px] font-mono text-[#8A8A8A] font-bold uppercase">
+                            Sala Oficial de Streaming / Google Meet
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setClassMeet(generateGoogleMeetRoomUrl(classTitle || 'live'))}
+                            className="text-[9px] font-mono font-bold text-blue-400 hover:text-blue-300 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded transition-all flex items-center gap-1 active:scale-95"
+                          >
+                            <Video className="w-3 h-3 text-blue-400" />
+                            AUTO-GENERAR GOOGLE MEET
+                          </button>
+                        </div>
+                        <input
+                          type="url"
+                          value={classMeet}
+                          onChange={e => setClassMeet(e.target.value)}
+                          placeholder="https://meet.google.com/abc-defg-hij"
+                          className="w-full px-4 py-3 rounded-xl bg-[#161616] border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-[#D9A9FF] transition-all"
+                        />
+                      </div>
+
+                      {/* Música y BPM para la clase */}
+                      <div className="p-4 rounded-2xl bg-[#1a1528] border border-purple-500/30 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="block text-[10px] font-mono text-[#D9A9FF] font-bold uppercase flex items-center gap-1.5">
+                            <Radio className="w-3.5 h-3.5 text-[#D9A9FF]" />
+                            Pista Musical Multifuente (YouTube, Spotify, SoundCloud)
+                          </label>
+                          <span className="text-[9px] font-mono text-purple-300 bg-purple-500/20 px-2 py-0.5 rounded border border-purple-500/30 font-semibold">
+                            Auto-Sincronización
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className="sm:col-span-2">
+                            <input
+                              type="url"
+                              value={classMusicUrl}
+                              onChange={e => setClassMusicUrl(e.target.value)}
+                              placeholder="Pega enlace de YouTube, Spotify o SoundCloud"
+                              className="w-full px-4 py-2.5 rounded-xl bg-[#120f1e] border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-purple-400 transition-all"
+                            />
+                          </div>
+                          <div>
+                            <div className="relative flex items-center">
+                              <input
+                                type="number"
+                                value={classBpm}
+                                onChange={e => setClassBpm(e.target.value ? parseInt(e.target.value) : '')}
+                                placeholder="128"
+                                className="w-full px-4 py-2.5 rounded-xl bg-[#120f1e] border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-purple-400 transition-all"
+                              />
+                              <span className="absolute right-3 text-[10px] font-mono font-bold text-purple-300">BPM</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {classMusicUrl.trim() && (
+                          <div className="mt-2 space-y-1">
+                            <p className="text-[10px] font-mono text-slate-300 uppercase font-bold">Vista Previa Reproductor Multifuente:</p>
+                            <MultiSourcePlayer 
+                              musicSource={parseMusicSource(classMusicUrl, classTitle || 'Track de Entrenamiento', typeof classBpm === 'number' ? classBpm : 128)}
+                              compact={true}
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Notas e instrucciones previas para los alumnos */}
+                      <div>
+                        <label className="block text-[10px] font-mono text-[#8A8A8A] font-bold uppercase mb-1.5">
+                          Indicaciones y Material Requerido para el Alumno
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={classNotes}
+                          onChange={e => setClassNotes(e.target.value)}
+                          placeholder="Requisitos: Calzado de suela plana, toalla, calentamiento previo de manguito rotador y espacio despejado..."
+                          className="w-full px-4 py-2.5 rounded-xl bg-[#161616] border border-white/10 text-slate-300 text-xs focus:outline-none focus:border-[#D9A9FF] resize-none"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        className="w-full py-3.5 px-5 rounded-xl bg-[#D9A9FF] hover:bg-[#F2CFFF] text-black font-black text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
+                      >
+                        <Calendar className="w-4 h-4" />
+                        <span>{language === 'es' ? 'Programar e Inyectar en Agenda de Cátedra' : 'Inject Class to Calendar'}</span>
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Right: Scheduled Sessions List with Instructor Launch & Attendance Controls */}
+                  <div className="bg-[#121212] border border-white/5 rounded-[24px] p-6 space-y-4">
+                    <div className="flex items-center justify-between pb-3 border-b border-white/5">
+                      <h3 className="text-sm font-mono tracking-wider text-[#8A8A8A] font-bold uppercase">
+                        {language === 'es' ? 'Tus Clases en Agenda' : 'Your Scheduled Events'}
+                      </h3>
+                      <span className="text-[10px] font-mono text-[#D9A9FF] bg-[#D9A9FF]/10 px-2 py-0.5 rounded border border-[#D9A9FF]/20 font-bold">
+                        {(events || []).filter(ev => ev.instructor === currentUser.name || (ev.title && ev.title.includes('[Taller]'))).length} Clases
+                      </span>
+                    </div>
+
+                    <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
+                      {(events || []).filter(ev => ev.instructor === currentUser.name || (ev.title && ev.title.includes('[Taller]'))).map(ev => {
+                        const eventAttendance = attendanceRecords[ev.id] || {};
+                        const presentCount = Object.values(eventAttendance).filter(st => st === 'present').length;
+                        
+                        return (
+                          <div key={ev.id} className="p-4 bg-[#161616] border border-white/5 hover:border-white/15 rounded-2xl space-y-3 transition-all">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[10px] font-mono text-[#D9A9FF] font-bold">{ev.date} @ {ev.time}</span>
+                              <span className="text-[9px] font-mono font-bold bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20">
+                                {ev.rsvpCount || students.length} Alumnos
+                              </span>
+                            </div>
+
+                            <div>
+                              <h4 className="text-xs font-black text-white">{ev.title}</h4>
+                              <p className="text-[11px] text-[#8A8A8A] font-semibold mt-0.5">{ev.duration} • {ev.instructor}</p>
+                            </div>
+
+                            {ev.meetUrl && (
+                              <div className="p-2 rounded-xl bg-blue-950/30 border border-blue-500/20 text-[10px] font-mono text-blue-200 truncate flex items-center gap-1.5">
+                                <Video className="w-3 h-3 text-blue-400 shrink-0" />
+                                <span className="truncate">{ev.meetUrl}</span>
+                              </div>
+                            )}
+
+                            {/* Action Buttons for the Instructor */}
+                            <div className="grid grid-cols-2 gap-2 pt-1">
+                              {ev.meetUrl ? (
+                                <a
+                                  href={ev.meetUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-mono text-[10px] font-black uppercase transition-all flex items-center justify-center gap-1.5 text-center shadow-md active:scale-95"
+                                >
+                                  <Play className="w-3 h-3" />
+                                  <span>Iniciar Sala</span>
+                                </a>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyClassLink(generateGoogleMeetRoomUrl(ev.title), ev.title)}
+                                  className="py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-white font-mono text-[10px] font-bold uppercase transition-all"
+                                >
+                                  Generar Link
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => setAttendanceModalEvent(ev)}
+                                className="py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-[#D9A9FF] font-mono text-[10px] font-bold uppercase transition-all flex items-center justify-center gap-1"
+                              >
+                                <ClipboardCheck className="w-3 h-3" />
+                                <span>Lista ({presentCount} Pres.)</span>
+                              </button>
+                            </div>
+
+                            <div className="flex items-center justify-between pt-1 border-t border-white/5 text-[10px] text-slate-400">
+                              <button
+                                type="button"
+                                onClick={() => handleCopyClassLink(ev.meetUrl || generateGoogleMeetRoomUrl(ev.title), ev.title)}
+                                className="hover:text-white flex items-center gap-1 transition-colors"
+                              >
+                                <Copy className="w-3 h-3" />
+                                <span>Copiar Enlace</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (window.confirm('¿Cancelar y eliminar esta sesión de la agenda?')) {
+                                    playChime('click');
+                                    setAlertText('Sesión cancelada.');
+                                    setTimeout(() => setAlertText(null), 2500);
+                                  }
+                                }}
+                                className="hover:text-rose-400 flex items-center gap-1 transition-colors text-slate-500"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>Cancelar</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {(events || []).filter(ev => ev && (ev.instructor === currentUser.name || (ev.title && ev.title.includes('[Taller]')))).length === 0 && (
+                        <div className="py-12 text-center text-[#8A8A8A] text-xs font-mono">
+                          [NO HAY SESIONES ACTIVAS EN AGENDA]
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 2. SUB-TAB: CURRICULUM & LESSON ASSIGNMENT */}
+              {classPanelSubTab === 'curriculum' && (
+                <div className="space-y-6">
+                  {/* Filter & Search Bar */}
+                  <div className="bg-[#121212] border border-white/5 rounded-2xl p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 flex-1 max-w-md bg-[#161616] border border-white/10 rounded-xl px-3 py-2">
+                      <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                      <input
+                        type="text"
+                        value={curriculumSearchQuery}
+                        onChange={e => setCurriculumSearchQuery(e.target.value)}
+                        placeholder="Buscar lecciones de técnica, rolls, musicalidad..."
+                        className="w-full bg-transparent text-white text-xs font-semibold focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2 overflow-x-auto">
+                      {(['all', 'Principiante', 'Intermedio', 'Avanzado'] as const).map(lvl => (
+                        <button
+                          key={lvl}
+                          onClick={() => setCurriculumLevelFilter(lvl)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all ${
+                            curriculumLevelFilter === lvl
+                              ? 'bg-[#D9A9FF] text-black font-black'
+                              : 'bg-white/5 text-slate-400 hover:text-white border border-white/5'
+                          }`}
+                        >
+                          {lvl === 'all' ? 'Todos los Niveles' : lvl}
+                        </button>
+                      ))}
+
+                      <button
+                        onClick={() => setShowAddLessonModal(true)}
+                        className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs font-black transition-all flex items-center gap-1.5 shrink-0"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Nueva Lección</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Focused Student Banner in Curriculum */}
+                  {selectedStudent && (
+                    <div className="p-4 rounded-2xl bg-pink-950/40 border border-pink-500/40 flex flex-wrap items-center justify-between gap-3 shadow-lg">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-pink-500/20 text-pink-300 flex items-center justify-center font-bold text-xs">
+                          {selectedStudent.name.substring(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-mono font-bold text-pink-300 uppercase">MODO ASIGNACIÓN INDIVIDUAL:</span>
+                          <h4 className="text-sm font-black text-white">{selectedStudent.name} ({selectedStudent.level})</h4>
+                        </div>
+                      </div>
+                      <p className="text-xs text-pink-200/80">
+                        Haz clic en <strong>"Asignar Lección"</strong> o <strong>"Validar Aprobación"</strong> para personalizar la ruta técnica de este alumno.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Lessons Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {(lessons || []).filter(l => {
+                      const matchQuery = !curriculumSearchQuery.trim() || l.title.toLowerCase().includes(curriculumSearchQuery.toLowerCase()) || l.description.toLowerCase().includes(curriculumSearchQuery.toLowerCase());
+                      const matchLvl = curriculumLevelFilter === 'all' || 
+                        (curriculumLevelFilter === 'Principiante' && (l.level === 1 || l.difficulty === 'principiante')) ||
+                        (curriculumLevelFilter === 'Intermedio' && (l.level === 2 || l.difficulty === 'intermedio')) ||
+                        (curriculumLevelFilter === 'Avanzado' && (l.difficulty === 'avanzado'));
+                      return matchQuery && matchLvl;
+                    }).map(lesson => {
+                      const assignedStudents = curriculumAssignedMap[lesson.id] || [];
+                      const approvedStudents = curriculumApprovedMap[lesson.id] || [];
+                      const isAssignedToSelected = selectedStudent ? assignedStudents.includes(selectedStudent.id) : false;
+                      const isApprovedBySelected = selectedStudent ? approvedStudents.includes(selectedStudent.id) : false;
+                      const levelName = lesson.difficulty 
+                        ? (lesson.difficulty.charAt(0).toUpperCase() + lesson.difficulty.slice(1)) 
+                        : (lesson.level === 1 ? 'Principiante' : 'Intermedio');
+
+                      return (
+                        <div key={lesson.id} className="bg-[#121212] border border-white/5 hover:border-white/20 rounded-[24px] p-5 space-y-4 flex flex-col justify-between transition-all group">
+                          <div className="space-y-3">
+                            <div className="relative rounded-2xl overflow-hidden aspect-video bg-black/40 border border-white/10">
+                              <img 
+                                src={(lesson as any).thumbnailUrl || (lesson as any).thumbnail || "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&q=80&w=600"} 
+                                alt={lesson.title} 
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                              />
+                              <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/70 backdrop-blur-md text-[10px] font-mono font-bold text-white border border-white/10">
+                                {lesson.duration}
+                              </div>
+                              {lesson.bpm && (
+                                <div className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-purple-900/80 backdrop-blur-md text-[10px] font-mono font-bold text-purple-200 border border-purple-500/30">
+                                  {lesson.bpm} BPM
+                                </div>
+                              )}
+                              <span className={`absolute bottom-2 left-2 px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                                levelName === 'Avanzado' ? 'bg-red-500/80 text-white' :
+                                levelName === 'Intermedio' ? 'bg-[#D9A9FF]/90 text-black' :
+                                'bg-cyan-500/80 text-black'
+                              }`}>
+                                {levelName}
+                              </span>
+                            </div>
+
+                            <div>
+                              <span className="text-[10px] font-mono text-purple-300 font-bold uppercase">{lesson.category}</span>
+                              <h4 className="text-sm font-extrabold text-white mt-1 group-hover:text-[#D9A9FF] transition-colors">{lesson.title}</h4>
+                              <p className="text-xs text-slate-400 font-medium line-clamp-2 mt-1">{lesson.description}</p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-3 pt-3 border-t border-white/5">
+                            <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+                              <span>Asignados: <strong className="text-white">{assignedStudents.length} alumnos</strong></span>
+                              <span>Aprobados: <strong className="text-emerald-400">{approvedStudents.length}</strong></span>
+                            </div>
+
+                            {/* Action Buttons for Instructor */}
+                            {selectedStudent ? (
+                              <div className="grid grid-cols-2 gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleAssignLesson(lesson.id, selectedStudent.id)}
+                                  className={`py-2 px-2.5 rounded-xl text-[10px] font-mono font-bold transition-all flex items-center justify-center gap-1 ${
+                                    isAssignedToSelected
+                                      ? 'bg-pink-600 text-white shadow-md'
+                                      : 'bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300'
+                                  }`}
+                                >
+                                  <UserCheck className="w-3 h-3" />
+                                  <span>{isAssignedToSelected ? 'Asignada' : 'Asignar'}</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleApproveLesson(lesson.id, selectedStudent.id)}
+                                  className={`py-2 px-2.5 rounded-xl text-[10px] font-mono font-bold transition-all flex items-center justify-center gap-1 ${
+                                    isApprovedBySelected
+                                      ? 'bg-emerald-600 text-white shadow-md'
+                                      : 'bg-white/5 hover:bg-white/10 border border-white/10 text-emerald-400'
+                                  }`}
+                                >
+                                  <Check className="w-3 h-3" />
+                                  <span>{isApprovedBySelected ? 'Aprobada' : 'Validar'}</span>
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleAssignLessonToAll(lesson.id)}
+                                className="w-full py-2 px-3 rounded-xl bg-white/5 hover:bg-[#D9A9FF]/20 border border-white/10 hover:border-[#D9A9FF]/40 text-slate-200 hover:text-[#D9A9FF] font-mono text-[10px] font-bold uppercase transition-all flex items-center justify-center gap-1.5"
+                              >
+                                <Users className="w-3 h-3" />
+                                <span>Asignar a Toda la Cátedra</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* 3. SUB-TAB: LIVE CONTROL ROOM & METRONOME */}
+              {classPanelSubTab === 'live_control' && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  {/* Left (2 Cols): Live Metronome & Practice Timer */}
+                  <div className="lg:col-span-2 space-y-6">
+                    {/* High Precision Live Metronome */}
+                    <div className="bg-[#121212] border border-[#D9A9FF]/30 rounded-[28px] p-6 space-y-5 shadow-2xl relative overflow-hidden">
+                      <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                        <div className="flex items-center gap-2">
+                          <Zap className="w-5 h-5 text-[#D9A9FF]" />
+                          <h3 className="text-base font-black text-white uppercase tracking-wider">
+                            Metrónomo en Vivo para Dirección de Clases
+                          </h3>
+                        </div>
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase ${
+                          liveMetronomeActive ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse' : 'bg-white/5 text-slate-400'
+                        }`}>
+                          {liveMetronomeActive ? 'Activo / Marcando Compás' : 'En Pausa'}
+                        </span>
+                      </div>
+
+                      {/* 8-Beat Visual Indicator Lights */}
+                      <div className="p-4 rounded-2xl bg-black/60 border border-white/10 space-y-2">
+                        <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 uppercase">
+                          <span>Conteo Visual de Compás (8 Tiempos):</span>
+                          <span>Acentos en Tiempos 1 y 5</span>
+                        </div>
+                        <div className="grid grid-cols-8 gap-2">
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(beat => {
+                            const isCurrent = liveMetronomeActive && liveMetronomeBeat === beat;
+                            const isAccentBeat = beat === 1 || beat === 5;
+                            return (
+                              <div
+                                key={beat}
+                                className={`h-12 rounded-xl border flex flex-col items-center justify-center font-mono font-black text-xs transition-all ${
+                                  isCurrent
+                                    ? isAccentBeat
+                                      ? 'bg-[#D9A9FF] text-black border-[#D9A9FF] shadow-[0_0_20px_rgba(217, 169, 255,0.8)] scale-105'
+                                      : 'bg-purple-500 text-white border-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.8)] scale-105'
+                                    : isAccentBeat
+                                      ? 'bg-white/10 border-[#D9A9FF]/30 text-[#D9A9FF]'
+                                      : 'bg-white/5 border-white/5 text-slate-400'
+                                }`}
+                              >
+                                <span>{beat}</span>
+                                {isAccentBeat && <span className="text-[7px] uppercase font-bold">ACC</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* BPM Slider & Direct Speed Presets */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-mono text-slate-400 font-bold uppercase">Tempo de Práctica (BPM):</span>
+                          <span className="text-3xl font-mono font-black text-[#D9A9FF]">{liveMetronomeBpm} <span className="text-xs text-slate-400 font-normal">BPM</span></span>
+                        </div>
+
+                        <input
+                          type="range"
+                          min="90"
+                          max="150"
+                          step="1"
+                          value={liveMetronomeBpm}
+                          onChange={e => setLiveMetronomeBpm(parseInt(e.target.value))}
+                          className="w-full accent-[#D9A9FF] cursor-pointer h-2 bg-white/10 rounded-lg"
+                        />
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          {[100, 110, 118, 124, 128, 132, 140].map(speed => (
+                            <button
+                              key={speed}
+                              type="button"
+                              onClick={() => {
+                                setLiveMetronomeBpm(speed);
+                                playChime('click');
+                              }}
+                              className={`px-3 py-1 rounded-xl text-xs font-mono font-bold transition-all ${
+                                liveMetronomeBpm === speed
+                                  ? 'bg-[#D9A9FF] text-black font-black'
+                                  : 'bg-white/5 hover:bg-white/10 text-slate-300 border border-white/5'
+                              }`}
+                            >
+                              {speed} BPM
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Start / Stop Metronome Button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          playChime('click');
+                          setLiveMetronomeActive(!liveMetronomeActive);
+                        }}
+                        className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-xl active:scale-98 ${
+                          liveMetronomeActive
+                            ? 'bg-rose-600 hover:bg-rose-500 text-white'
+                            : 'bg-[#D9A9FF] hover:bg-[#F2CFFF] text-black'
+                        }`}
+                      >
+                        {liveMetronomeActive ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                        <span>{liveMetronomeActive ? 'Detener Metrónomo en Vivo' : 'Iniciar Metrónomo de Clase'}</span>
+                      </button>
+                    </div>
+
+                    {/* Drill & Freestyle Round Timer */}
+                    <div className="bg-[#121212] border border-white/5 rounded-[28px] p-6 space-y-4">
+                      <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                        <div className="flex items-center gap-2">
+                          <Timer className="w-5 h-5 text-purple-400" />
+                          <h3 className="text-base font-black text-white uppercase tracking-wider">
+                            Cronómetro de Rondas de Drill & Freestyle
+                          </h3>
+                        </div>
+                        <span className="text-xs font-mono font-bold text-slate-400">
+                          {Math.floor(liveRoundTimerSeconds / 60)}:{(liveRoundTimerSeconds % 60).toString().padStart(2, '0')}
+                        </span>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 rounded-2xl bg-black/40 border border-white/5">
+                        <div className="text-center sm:text-left">
+                          <div className="text-4xl sm:text-5xl font-mono font-black text-white">
+                            {Math.floor(liveRoundTimerSeconds / 60)}:{(liveRoundTimerSeconds % 60).toString().padStart(2, '0')}
+                          </div>
+                          <p className="text-[11px] text-slate-400 font-mono mt-1">Temporizador de intervención para alumnos en cámara</p>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          {[30, 45, 60, 90, 120].map(secs => (
+                            <button
+                              key={secs}
+                              type="button"
+                              onClick={() => handleStartRoundTimer(secs)}
+                              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-mono text-xs font-bold transition-all"
+                            >
+                              {secs}s
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setLiveRoundTimerRunning(!liveRoundTimerRunning)}
+                          className={`py-3 rounded-xl font-mono text-xs font-black uppercase transition-all flex items-center justify-center gap-2 ${
+                            liveRoundTimerRunning
+                              ? 'bg-amber-600 text-white'
+                              : 'bg-purple-600 hover:bg-purple-500 text-white'
+                          }`}
+                        >
+                          {liveRoundTimerRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                          <span>{liveRoundTimerRunning ? 'Pausar Ronda' : 'Comenzar Ronda'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleResetRoundTimer}
+                          className="py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 font-mono text-xs font-bold uppercase transition-all flex items-center justify-center gap-2"
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                          <span>Reiniciar</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right (1 Col): Live Teacher Quick Notes & Posture Remarks */}
+                  <div className="bg-[#121212] border border-white/5 rounded-[28px] p-6 space-y-4 flex flex-col justify-between">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                        <h4 className="text-sm font-black text-white flex items-center gap-2 uppercase tracking-wider">
+                          <Edit3 className="w-4 h-4 text-[#D9A9FF]" />
+                          Bitácora de Observaciones en Vivo
+                        </h4>
+                        <span className="text-[10px] font-mono text-slate-400">Auto-Guardado</span>
+                      </div>
+
+                      <p className="text-[11px] text-slate-400 font-medium">
+                        Anota correcciones técnicas, simetría braquial y postura de los alumnos durante la sesión en directo:
+                      </p>
+
+                      <textarea
+                        rows={14}
+                        value={liveTeacherNotes}
+                        onChange={e => setLiveTeacherNotes(e.target.value)}
+                        placeholder="Escribe tus observaciones técnicas aquí..."
+                        className="w-full p-3.5 rounded-2xl bg-[#161616] border border-white/10 text-slate-200 text-xs font-mono leading-relaxed focus:outline-none focus:border-[#D9A9FF] resize-none"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(liveTeacherNotes);
+                        playChime('click');
+                        setAlertText('¡Observaciones de clase copiadas al portapapeles!');
+                        setTimeout(() => setAlertText(null), 3000);
+                      }}
+                      className="w-full py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-xs font-mono font-bold uppercase transition-all flex items-center justify-center gap-2"
+                    >
+                      <Copy className="w-4 h-4 text-[#D9A9FF]" />
+                      <span>Copiar Bitácora para WhatsApp / Email</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 4. SUB-TAB: SUBMISSIONS & HOMEWORK GRADING */}
+              {classPanelSubTab === 'submissions' && (
+                <div className="space-y-6">
+                  <div className="bg-[#121212] border border-white/5 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div>
+                      <h3 className="text-base font-black text-white uppercase">
+                        Entregas Técnicas y Tareas de Alumnos
+                      </h3>
+                      <p className="text-xs text-slate-400 font-medium mt-0.5">
+                        Revisa los videos de práctica enviados por tus alumnos, asigna puntaje técnico y brinda feedback pedagógico.
+                      </p>
+                    </div>
+
+                    <span className="text-xs font-mono text-[#D9A9FF] bg-[#D9A9FF]/10 px-3 py-1 rounded-xl border border-[#D9A9FF]/20 font-bold">
+                      {studentSubmissions.length} Tareas Registradas
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {studentSubmissions.map(sub => (
+                      <div key={sub.id} className="bg-[#121212] border border-white/5 rounded-[24px] p-5 space-y-4 flex flex-col justify-between">
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between gap-2 border-b border-white/5 pb-3">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-full bg-[#D9A9FF]/10 text-[#D9A9FF] font-bold text-xs flex items-center justify-center border border-[#D9A9FF]/20">
+                                {sub.studentName.substring(0, 2).toUpperCase()}
+                              </div>
+                              <div>
+                                <h4 className="text-sm font-black text-white">{sub.studentName}</h4>
+                                <span className="text-[10px] font-mono text-slate-400">{sub.submittedAt}</span>
+                              </div>
+                            </div>
+
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase ${
+                              sub.status === 'graded' 
+                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                : 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
+                            }`}>
+                              {sub.status === 'graded' ? `Calificado (${sub.score}/100)` : 'Pendiente de Revisión'}
+                            </span>
+                          </div>
+
+                          <div>
+                            <span className="text-[10px] font-mono text-slate-400 font-bold uppercase">Lección Correspondiente:</span>
+                            <h5 className="text-xs font-black text-white mt-0.5">{sub.lessonTitle}</h5>
+                          </div>
+
+                          <div className="relative rounded-2xl overflow-hidden aspect-video bg-black/40 border border-white/10">
+                            <img src={sub.videoUrl} alt={sub.lessonTitle} className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                              <div className="w-10 h-10 rounded-full bg-[#D9A9FF] text-black flex items-center justify-center shadow-lg font-bold">
+                                <Play className="w-5 h-5 ml-0.5" />
+                              </div>
+                            </div>
+                          </div>
+
+                          {sub.feedback && (
+                            <div className="p-3 rounded-xl bg-white/5 border border-white/5 space-y-1">
+                              <span className="text-[10px] font-mono text-emerald-400 font-bold uppercase">Tu Feedback Docente:</span>
+                              <p className="text-xs text-slate-300 italic font-medium">"{sub.feedback}"</p>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="pt-2">
+                          <button
+                            type="button"
+                            onClick={() => setGradingSubmission({
+                              submission: sub,
+                              score: sub.score || 85,
+                              feedback: sub.feedback || 'Excelente fluidez en el patrón. Recuerda mantener la extensión de codos en los compases acelerados.'
+                            })}
+                            className="w-full py-2.5 px-4 rounded-xl bg-[#D9A9FF] hover:bg-[#F2CFFF] text-black font-mono text-xs font-black uppercase transition-all flex items-center justify-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
+                          >
+                            <ClipboardCheck className="w-4 h-4" />
+                            <span>{sub.status === 'graded' ? 'Editar Calificación & Feedback' : 'Calificar Entrega Técnica'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </motion.div>
+          )}
+
+          {/* ATTENDANCE SHEET MODAL */}
+          {attendanceModalEvent && (
+            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="bg-[#141414] border border-[#D9A9FF]/40 rounded-[28px] p-6 max-w-xl w-full space-y-5 shadow-2xl relative"
+              >
+                <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                  <div>
+                    <span className="text-[10px] font-mono font-bold text-[#D9A9FF] uppercase">CONTROL DE ASISTENCIA OFICIAL</span>
+                    <h3 className="text-base font-black text-white">{attendanceModalEvent.title}</h3>
+                    <p className="text-xs font-mono text-slate-400">{attendanceModalEvent.date} @ {attendanceModalEvent.time}</p>
+                  </div>
+                  <button
+                    onClick={() => setAttendanceModalEvent(null)}
+                    className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
+                  {students.map(std => {
+                    const eventAttendance = attendanceRecords[attendanceModalEvent.id] || {};
+                    const currentStatus = eventAttendance[std.id] || 'absent';
+
+                    return (
+                      <div key={std.id} className="p-3 rounded-2xl bg-white/5 border border-white/5 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-[10px] font-bold text-[#D9A9FF]">
+                            {std.name.substring(0, 2).toUpperCase()}
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-bold text-white">{std.name}</h4>
+                            <span className="text-[10px] font-mono text-slate-400">{std.level}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleSetStudentAttendance(attendanceModalEvent.id, std.id, 'present')}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-all ${
+                              currentStatus === 'present'
+                                ? 'bg-emerald-600 text-white shadow-sm'
+                                : 'bg-white/5 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            Presente
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSetStudentAttendance(attendanceModalEvent.id, std.id, 'late')}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-all ${
+                              currentStatus === 'late'
+                                ? 'bg-amber-600 text-white shadow-sm'
+                                : 'bg-white/5 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            Tarde
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSetStudentAttendance(attendanceModalEvent.id, std.id, 'absent')}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-all ${
+                              currentStatus === 'absent'
+                                ? 'bg-rose-600 text-white shadow-sm'
+                                : 'bg-white/5 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            Ausente
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-white/10">
+                  <span className="text-xs font-mono text-slate-400">
+                    Asistencia: <strong className="text-emerald-400">{Object.values(attendanceRecords[attendanceModalEvent.id] || {}).filter(st => st === 'present').length} de {students.length} presentes</strong>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playChime('success');
+                      setAlertText('¡Lista de asistencia guardada correctamente!');
+                      setAttendanceModalEvent(null);
+                      setTimeout(() => setAlertText(null), 3000);
+                    }}
+                    className="py-2 px-4 rounded-xl bg-[#D9A9FF] text-black font-mono text-xs font-black uppercase transition-all"
+                  >
+                    Guardar Asistencia
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+
+          {/* GRADING SUBMISSION MODAL */}
+          {gradingSubmission && (
+            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="bg-[#141414] border border-[#D9A9FF]/40 rounded-[28px] p-6 max-w-lg w-full space-y-4 shadow-2xl relative"
+              >
+                <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                  <div>
+                    <span className="text-[10px] font-mono font-bold text-[#D9A9FF] uppercase">CALIFICAR ENTREGA TÉCNICA</span>
+                    <h3 className="text-sm font-black text-white">{gradingSubmission.submission.studentName}</h3>
+                    <p className="text-xs font-mono text-slate-400">{gradingSubmission.submission.lessonTitle}</p>
+                  </div>
+                  <button
+                    onClick={() => setGradingSubmission(null)}
+                    className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-[10px] font-mono text-[#8A8A8A] font-bold uppercase mb-1">
+                      Puntaje de Rendimiento (1 - 100)
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="range"
+                        min="50"
+                        max="100"
+                        step="1"
+                        value={gradingSubmission.score}
+                        onChange={e => setGradingSubmission({
+                          ...gradingSubmission,
+                          score: parseInt(e.target.value)
+                        })}
+                        className="flex-1 accent-[#D9A9FF] cursor-pointer"
+                      />
+                      <span className="text-xl font-mono font-black text-[#D9A9FF] w-14 text-right">
+                        {gradingSubmission.score}/100
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-mono text-[#8A8A8A] font-bold uppercase mb-1">
+                      Correcciones y Feedback Técnico para el Alumno
+                    </label>
+                    <textarea
+                      rows={4}
+                      value={gradingSubmission.feedback}
+                      onChange={e => setGradingSubmission({
+                        ...gradingSubmission,
+                        feedback: e.target.value
+                      })}
+                      placeholder="Indica correcciones sobre la simetría de rolls, posición de hombros y musicalidad..."
+                      className="w-full p-3 rounded-xl bg-[#1a1a1a] border border-white/10 text-white text-xs font-medium focus:outline-none focus:border-[#D9A9FF] resize-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => setGradingSubmission(null)}
+                    className="py-2 px-3 rounded-xl bg-white/5 text-slate-400 text-xs font-bold"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleGradeSubmission(
+                      gradingSubmission.submission.id,
+                      gradingSubmission.score,
+                      gradingSubmission.feedback
+                    )}
+                    className="py-2 px-4 rounded-xl bg-[#D9A9FF] hover:bg-[#F2CFFF] text-black font-mono text-xs font-black uppercase transition-all shadow-md"
+                  >
+                    Guardar & Emitir Nota
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+
+          {/* ADD NEW LESSON MODAL */}
+          {showAddLessonModal && (
+            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="bg-[#141414] border border-[#D9A9FF]/40 rounded-[28px] p-6 max-w-lg w-full space-y-4 shadow-2xl relative"
+              >
+                <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                  <div className="flex items-center gap-2">
+                    <PlusCircle className="w-5 h-5 text-emerald-400" />
+                    <h3 className="text-base font-black text-white uppercase">Añadir Nueva Lección al Currículo</h3>
+                  </div>
+                  <button
+                    onClick={() => setShowAddLessonModal(false)}
+                    className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!newLessonTitle.trim()) return;
+                    playChime('success');
+                    setShowAddLessonModal(false);
+                    setAlertText(`¡Lección "${newLessonTitle}" añadida al currículo y disponible para asignaciones!`);
+                    setTimeout(() => setAlertText(null), 3500);
+                  }}
+                  className="space-y-3"
+                >
+                  <div>
+                    <label className="block text-[10px] font-mono text-[#8A8A8A] font-bold uppercase mb-1">Título de la Lección</label>
+                    <input
+                      type="text"
+                      required
+                      value={newLessonTitle}
+                      onChange={e => setNewLessonTitle(e.target.value)}
+                      placeholder="ej: Micro-Musicalidad & Sincopa a 130 BPM"
+                      className="w-full px-3 py-2 rounded-xl bg-[#1a1a1a] border border-white/10 text-white font-bold text-xs focus:outline-none focus:border-[#D9A9FF]"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-mono text-[#8A8A8A] font-bold uppercase mb-1">Categoría Técnica</label>
+                      <input
+                        type="text"
+                        value={newLessonCategory}
+                        onChange={e => setNewLessonCategory(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-[#1a1a1a] border border-white/10 text-white text-xs focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-mono text-[#8A8A8A] font-bold uppercase mb-1">Nivel</label>
+                      <select
+                        value={newLessonLevel}
+                        onChange={e => setNewLessonLevel(e.target.value as any)}
+                        className="w-full px-3 py-2 rounded-xl bg-[#1a1a1a] border border-white/10 text-white font-bold text-xs focus:outline-none"
+                      >
+                        <option value="Principiante">Principiante</option>
+                        <option value="Intermedio">Intermedio</option>
+                        <option value="Avanzado">Avanzado</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-mono text-[#8A8A8A] font-bold uppercase mb-1">Duración</label>
+                      <input
+                        type="text"
+                        value={newLessonDuration}
+                        onChange={e => setNewLessonDuration(e.target.value)}
+                        placeholder="20 min"
+                        className="w-full px-3 py-2 rounded-xl bg-[#1a1a1a] border border-white/10 text-white text-xs font-mono focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-mono text-[#8A8A8A] font-bold uppercase mb-1">Tempo (BPM)</label>
+                      <input
+                        type="number"
+                        value={newLessonBpm}
+                        onChange={e => setNewLessonBpm(parseInt(e.target.value) || 128)}
+                        className="w-full px-3 py-2 rounded-xl bg-[#1a1a1a] border border-white/10 text-white text-xs font-mono focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-mono text-[#8A8A8A] font-bold uppercase mb-1">Descripción Pedagógica</label>
+                    <textarea
+                      rows={2}
+                      value={newLessonDescription}
+                      onChange={e => setNewLessonDescription(e.target.value)}
+                      placeholder="Desglose del contenido técnico..."
+                      className="w-full px-3 py-2 rounded-xl bg-[#1a1a1a] border border-white/10 text-slate-300 text-xs focus:outline-none resize-none"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
+                    <button
+                      type="button"
+                      onClick={() => setShowAddLessonModal(false)}
+                      className="py-2 px-3 rounded-xl bg-white/5 text-slate-400 text-xs font-bold"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs font-black uppercase transition-all shadow-md"
+                    >
+                      Guardar Lección
+                    </button>
+                  </div>
+                </form>
+              </motion.div>
+            </div>
           )}
 
           {activeSubTab === 'promotion' && (
@@ -2854,12 +4866,12 @@ Semana 3-4 (Progresión):
               id="promotion-tab-container"
             >
               {/* Introduction Banner */}
-              <div className="bg-[#121212] border border-[#E9C349]/20 rounded-[24px] p-6 sm:p-8 relative overflow-hidden shadow-2xl">
-                <div className="absolute right-[-30px] top-[-30px] w-48 h-48 bg-[#E9C349]/5 rounded-full blur-2xl pointer-events-none" />
+              <div className="bg-[#121212] border border-[#D9A9FF]/20 rounded-[24px] p-6 sm:p-8 relative overflow-hidden shadow-2xl">
+                <div className="absolute right-[-30px] top-[-30px] w-48 h-48 bg-[#D9A9FF]/5 rounded-full blur-2xl pointer-events-none" />
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                   <div className="space-y-2 max-w-xl">
-                    <span className="inline-flex items-center gap-1 bg-[#E9C349]/10 text-[#E9C349] border border-[#E9C349]/30 text-[9px] font-mono font-bold tracking-widest px-2.5 py-1 rounded-full uppercase">
-                      <Sparkles className="w-3.5 h-3.5 text-[#E9C349]" /> 
+                    <span className="inline-flex items-center gap-1 bg-[#D9A9FF]/10 text-[#D9A9FF] border border-[#D9A9FF]/30 text-[9px] font-mono font-bold tracking-widest px-2.5 py-1 rounded-full uppercase">
+                      <Sparkles className="w-3.5 h-3.5 text-[#D9A9FF]" /> 
                       {language === 'es' ? 'ALCANCE GLOBAL DESTACADO' : 'GLOBAL OUTREACH FEATURES'}
                     </span>
                     <h3 className="text-lg md:text-2xl font-serif-elegant font-black text-white uppercase leading-tight">
@@ -2873,10 +4885,10 @@ Semana 3-4 (Progresión):
                   </div>
 
                   {currentUser.isFeaturedInstructor ? (
-                    <div className="bg-[#161616] border border-[#E9C349]/30 p-4 rounded-2xl flex flex-col items-start gap-1 w-full md:w-auto shrink-0 shadow-lg">
+                    <div className="bg-[#161616] border border-[#D9A9FF]/30 p-4 rounded-2xl flex flex-col items-start gap-1 w-full md:w-auto shrink-0 shadow-lg">
                       <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-[#E9C349] animate-pulse" />
-                        <span className="text-[10px] font-mono font-bold text-[#E9C349] uppercase">
+                        <div className="w-2 h-2 rounded-full bg-[#D9A9FF] animate-pulse" />
+                        <span className="text-[10px] font-mono font-bold text-[#D9A9FF] uppercase">
                           {language === 'es' ? 'ESTATUS: DESTACADO ACTIVO' : 'STATUS: ACTIVE FEATURED'}
                         </span>
                       </div>
@@ -2907,10 +4919,10 @@ Semana 3-4 (Progresión):
               </div>
 
               {/* ESTABLECER PRECIO DE MEMBRESÍA MENSUAL */}
-              <div className="bg-[#121212] border border-[#E9C349]/30 rounded-[24px] p-6 space-y-4 shadow-2xl relative overflow-hidden">
-                <div className="absolute right-0 top-0 w-48 h-48 bg-[#E9C349]/5 rounded-full blur-2xl pointer-events-none" />
+              <div className="bg-[#121212] border border-[#D9A9FF]/30 rounded-[24px] p-6 space-y-4 shadow-2xl relative overflow-hidden">
+                <div className="absolute right-0 top-0 w-48 h-48 bg-[#D9A9FF]/5 rounded-full blur-2xl pointer-events-none" />
                 <div className="flex items-center gap-2">
-                  <DollarSign className="w-5 h-5 text-[#E9C349]" />
+                  <DollarSign className="w-5 h-5 text-[#D9A9FF]" />
                   <h4 className="text-sm font-mono font-bold tracking-widest text-white uppercase">
                     {language === 'es' ? 'Establece tu Precio de Membresía Mensual ($ USD/mes)' : 'Set Your Monthly Membership Fee ($ USD/mo)'}
                   </h4>
@@ -2931,7 +4943,7 @@ Semana 3-4 (Progresión):
 
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-2">
                   <div className="relative flex-1">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-[#E9C349]">$</span>
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-[#D9A9FF]">$</span>
                     <input 
                       type="number"
                       step="0.50"
@@ -2942,7 +4954,7 @@ Semana 3-4 (Progresión):
                         setPriceNumberInput(e.target.value);
                       }}
                       placeholder="15.00"
-                      className="w-full bg-[#161616] border border-white/10 rounded-xl pl-8 pr-16 py-2.5 text-xs text-white font-mono font-bold focus:border-[#E9C349] outline-none"
+                      className="w-full bg-[#161616] border border-white/10 rounded-xl pl-8 pr-16 py-2.5 text-xs text-white font-mono font-bold focus:border-[#D9A9FF] outline-none"
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono text-slate-400 font-bold">USD/mes</span>
                   </div>
@@ -2959,7 +4971,7 @@ Semana 3-4 (Progresión):
                         }}
                         className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono font-bold border transition-all ${
                           priceNumberInput === presetPrice 
-                            ? 'bg-[#E9C349]/20 text-[#E9C349] border-[#E9C349]' 
+                            ? 'bg-[#D9A9FF]/20 text-[#D9A9FF] border-[#D9A9FF]' 
                             : 'bg-white/5 text-[#8A8A8A] border-white/5 hover:text-white'
                         }`}
                       >
@@ -2972,16 +4984,16 @@ Semana 3-4 (Progresión):
                     type="button"
                     disabled={isUpdatingPrice}
                     onClick={() => handleUpdatePricing(priceNumberInput)}
-                    className="px-5 py-2.5 bg-gradient-to-r from-[#9A2B3C] via-[#B8344B] to-[#E9C349] hover:brightness-110 text-white text-xs font-black rounded-xl uppercase tracking-wider transition-all shrink-0 active:scale-95 flex items-center justify-center gap-1.5 shadow-lg"
+                    className="px-5 py-2.5 bg-gradient-to-r from-[#C23E9E] via-[#C23FA0] to-[#D9A9FF] hover:brightness-110 text-white text-xs font-black rounded-xl uppercase tracking-wider transition-all shrink-0 active:scale-95 flex items-center justify-center gap-1.5 shadow-lg"
                   >
                     {isUpdatingPrice ? (
                       <>
-                        <Loader2 className="w-4 h-4 animate-spin text-[#E9C349]" />
+                        <Loader2 className="w-4 h-4 animate-spin text-[#D9A9FF]" />
                         <span>Validando...</span>
                       </>
                     ) : (
                       <>
-                        <CheckCircle2 className="w-4 h-4 text-[#E9C349]" />
+                        <CheckCircle2 className="w-4 h-4 text-[#D9A9FF]" />
                         <span>Actualizar Tarifa</span>
                       </>
                     )}
@@ -2991,9 +5003,9 @@ Semana 3-4 (Progresión):
 
               {/* CONFIGURATION SECTION: BILLING & VISIBILITY */}
               <div className="bg-[#121212] border border-[#262626] rounded-[24px] p-6 space-y-4 shadow-2xl relative overflow-hidden">
-                <div className="absolute right-0 bottom-0 w-48 h-48 bg-[#E9C349]/5 rounded-full blur-2xl pointer-events-none" />
+                <div className="absolute right-0 bottom-0 w-48 h-48 bg-[#D9A9FF]/5 rounded-full blur-2xl pointer-events-none" />
                 <div className="flex items-center gap-2">
-                  <Settings className="w-4.5 h-4.5 text-[#E9C349]" />
+                  <Settings className="w-4.5 h-4.5 text-[#D9A9FF]" />
                   <h4 className="text-xs font-mono font-bold tracking-widest text-white uppercase">
                     {language === 'es' ? 'Configuración de Suscripción & Visibilidad' : 'Subscription & Visibility Configuration'}
                   </h4>
@@ -3054,7 +5066,7 @@ Semana 3-4 (Progresión):
                           setSelectedPlan('monthly');
                           setIsCheckingOut(true);
                         }}
-                        className="mt-4 px-3 py-1.5 bg-[#E9C349] hover:bg-[#ffe175] text-black rounded-xl text-[10px] font-black transition-all text-center uppercase cursor-pointer"
+                        className="mt-4 px-3 py-1.5 bg-[#D9A9FF] hover:bg-[#F2CFFF] text-black rounded-xl text-[10px] font-black transition-all text-center uppercase cursor-pointer"
                       >
                         {language === 'es' ? 'Activar con Plan de Destacado' : 'Activate with Promotion Plan'}
                       </button>
@@ -3068,7 +5080,7 @@ Semana 3-4 (Progresión):
                         {language === 'es' ? 'VISIBILIDAD EN EL DIRECTORIO' : 'DIRECTORY VISIBILITY'}
                       </span>
                       <div className="flex items-center gap-2 mt-2">
-                        <div className={`w-2.5 h-2.5 rounded-full ${currentUser.isFeaturedInstructor ? 'bg-[#E9C349] animate-pulse' : 'bg-zinc-600'}`} />
+                        <div className={`w-2.5 h-2.5 rounded-full ${currentUser.isFeaturedInstructor ? 'bg-[#D9A9FF] animate-pulse' : 'bg-zinc-600'}`} />
                         <span className="text-xs font-bold text-white uppercase font-mono">
                           {currentUser.isFeaturedInstructor 
                             ? (language === 'es' ? 'DESTACADO (Arriba de la Lista)' : 'FEATURED (Top of List)') 
@@ -3105,7 +5117,7 @@ Semana 3-4 (Progresión):
                             }}
                             className={`px-3 py-1.5 rounded-xl text-[10px] font-bold transition-all cursor-pointer uppercase ${
                               currentUser.isFeaturedInstructor 
-                                ? 'bg-[#E9C349] text-black hover:bg-[#ffe175]' 
+                                ? 'bg-[#D9A9FF] text-black hover:bg-[#F2CFFF]' 
                                 : 'bg-white/5 text-white hover:bg-white/10 border border-white/10'
                             }`}
                           >
@@ -3123,13 +5135,13 @@ Semana 3-4 (Progresión):
               </div>
 
               {/* Single $15/mo Instructor Subscription Plan */}
-              <div className="max-w-2xl mx-auto bg-gradient-to-br from-[#18122a] via-[#130f21] to-[#0f0b1a] border-2 border-[#E9C349] rounded-[28px] p-6 sm:p-8 relative shadow-2xl overflow-hidden space-y-6">
-                <div className="absolute top-0 right-0 bg-[#E9C349] text-black text-[9px] font-mono font-black uppercase px-4 py-1.5 rounded-bl-2xl tracking-widest shadow-md">
+              <div className="max-w-2xl mx-auto bg-gradient-to-br from-[#18122a] via-[#130f21] to-[#0f0b1a] border-2 border-[#D9A9FF] rounded-[28px] p-6 sm:p-8 relative shadow-2xl overflow-hidden space-y-6">
+                <div className="absolute top-0 right-0 bg-[#D9A9FF] text-black text-[9px] font-mono font-black uppercase px-4 py-1.5 rounded-bl-2xl tracking-widest shadow-md">
                   MODELO DE SUSCRIPCIÓN INDEPENDIENTE
                 </div>
 
                 <div className="space-y-3">
-                  <span className="text-[10px] font-mono font-black text-[#E9C349] bg-[#E9C349]/15 border border-[#E9C349]/30 px-3 py-1 rounded-full uppercase inline-block">
+                  <span className="text-[10px] font-mono font-black text-[#D9A9FF] bg-[#D9A9FF]/15 border border-[#D9A9FF]/30 px-3 py-1 rounded-full uppercase inline-block">
                     SUSCRIPCIÓN POR PROFESOR
                   </span>
                   <h4 className="text-xl sm:text-2xl font-black text-white uppercase tracking-wide">
@@ -3139,7 +5151,7 @@ Semana 3-4 (Progresión):
                     Acceso completo al programa intensivo de 4 semanas, material descargable, evaluaciones personalizadas y clases en vivo del instructor seleccionado.
                   </p>
                   <div className="flex items-baseline gap-2 pt-2">
-                    <span className="text-4xl font-serif-elegant font-black text-[#E9C349]">$15.00</span>
+                    <span className="text-4xl font-serif-elegant font-black text-[#D9A9FF]">$15.00</span>
                     <span className="text-xs font-mono font-bold text-slate-300 uppercase">USD / mes por instructor</span>
                   </div>
                 </div>
@@ -3148,19 +5160,19 @@ Semana 3-4 (Progresión):
 
                 <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-semibold text-slate-200">
                   <li className="flex items-start gap-2.5">
-                    <Check className="w-4 h-4 text-[#E9C349] shrink-0 mt-0.5" />
+                    <Check className="w-4 h-4 text-[#D9A9FF] shrink-0 mt-0.5" />
                     <span>Programa Intensivo de 4 Semanas HD</span>
                   </li>
                   <li className="flex items-start gap-2.5">
-                    <Check className="w-4 h-4 text-[#E9C349] shrink-0 mt-0.5" />
+                    <Check className="w-4 h-4 text-[#D9A9FF] shrink-0 mt-0.5" />
                     <span>Feedback en Video del Instructor</span>
                   </li>
                   <li className="flex items-start gap-2.5">
-                    <Check className="w-4 h-4 text-[#E9C349] shrink-0 mt-0.5" />
+                    <Check className="w-4 h-4 text-[#D9A9FF] shrink-0 mt-0.5" />
                     <span>Acceso a Live Battles & Q&A</span>
                   </li>
                   <li className="flex items-start gap-2.5">
-                    <Check className="w-4 h-4 text-[#E9C349] shrink-0 mt-0.5" />
+                    <Check className="w-4 h-4 text-[#D9A9FF] shrink-0 mt-0.5" />
                     <span>Cancelación en cualquier momento</span>
                   </li>
                 </ul>
@@ -3171,7 +5183,7 @@ Semana 3-4 (Progresión):
                     setSelectedPlan('monthly');
                     setIsCheckingOut(true);
                   }}
-                  className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-[#E9C349] via-[#f7d978] to-[#E9C349] hover:opacity-95 text-black font-black text-xs uppercase tracking-wider transition-all shadow-xl shadow-[#E9C349]/20 active:scale-95 flex items-center justify-center gap-2"
+                  className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-[#D9A9FF] via-[#f7d978] to-[#D9A9FF] hover:opacity-95 text-black font-black text-xs uppercase tracking-wider transition-all shadow-xl shadow-[#D9A9FF]/20 active:scale-95 flex items-center justify-center gap-2"
                 >
                   <CreditCard className="w-4 h-4 text-black" />
                   ACTIVAR SUSCRIPCIÓN ({currentUser.monthlyPrice || '$35 USD / MES'})
@@ -3196,7 +5208,7 @@ Semana 3-4 (Progresión):
                       initial={{ scale: 0.9, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
                       exit={{ scale: 0.9, opacity: 0 }}
-                      className="bg-[#0F0F13] border-2 border-[#E9C349]/30 rounded-3xl p-6 sm:p-8 max-w-md w-full relative shadow-[0_20px_50px_rgba(233,195,73,0.1)] space-y-6"
+                      className="bg-[#0F0F13] border-2 border-[#D9A9FF]/30 rounded-3xl p-6 sm:p-8 max-w-md w-full relative shadow-[0_20px_50px_rgba(217, 169, 255,0.1)] space-y-6"
                     >
                       <button
                         onClick={() => {
@@ -3211,7 +5223,7 @@ Semana 3-4 (Progresión):
 
                       {checkoutSuccess ? (
                         <div className="py-8 text-center space-y-4">
-                          <div className="w-16 h-16 bg-[#E9C349]/10 border-2 border-[#E9C349] rounded-full flex items-center justify-center mx-auto text-[#E9C349] shadow-xl animate-bounce">
+                          <div className="w-16 h-16 bg-[#D9A9FF]/10 border-2 border-[#D9A9FF] rounded-full flex items-center justify-center mx-auto text-[#D9A9FF] shadow-xl animate-bounce">
                             <ShieldCheck className="w-8 h-8" />
                           </div>
                           <h4 className="text-lg font-serif-elegant font-black text-white uppercase tracking-tight">
@@ -3226,7 +5238,7 @@ Semana 3-4 (Progresión):
                       ) : (
                         <form onSubmit={handleCheckoutSubmit} className="space-y-4">
                           <div className="text-center space-y-2">
-                            <span className="text-[9px] font-mono bg-[#E9C349]/15 text-[#E9C349] border border-[#E9C349]/20 px-2.5 py-0.5 rounded uppercase">
+                            <span className="text-[9px] font-mono bg-[#D9A9FF]/15 text-[#D9A9FF] border border-[#D9A9FF]/20 px-2.5 py-0.5 rounded uppercase">
                               {language === 'es' ? 'MÉTODO DE PAGO SEGURO' : 'SECURE PAYMENT METHOD'}
                             </span>
                             <h3 className="text-lg font-serif-elegant font-black text-white uppercase tracking-tight">
@@ -3253,7 +5265,7 @@ Semana 3-4 (Progresión):
                                 placeholder="BRANDO HERMOSO"
                                 value={checkoutCardName}
                                 onChange={e => setCheckoutCardName(e.target.value.toUpperCase())}
-                                className="w-full px-4 py-2.5 rounded-xl bg-[#161616] border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-[#E9C349] transition-all"
+                                className="w-full px-4 py-2.5 rounded-xl bg-[#161616] border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-[#D9A9FF] transition-all"
                               />
                             </div>
 
@@ -3282,7 +5294,7 @@ Semana 3-4 (Progresión):
                                     setCheckoutCardNumber(val);
                                   }
                                 }}
-                                className="w-full px-4 py-2.5 rounded-xl bg-[#161616] border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-[#E9C349] transition-all"
+                                className="w-full px-4 py-2.5 rounded-xl bg-[#161616] border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-[#D9A9FF] transition-all"
                               />
                             </div>
 
@@ -3305,7 +5317,7 @@ Semana 3-4 (Progresión):
                                       setCheckoutCardExpiry(val);
                                     }
                                   }}
-                                  className="w-full px-4 py-2.5 rounded-xl bg-[#161616] border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-[#E9C349] transition-all"
+                                  className="w-full px-4 py-2.5 rounded-xl bg-[#161616] border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-[#D9A9FF] transition-all"
                                 />
                               </div>
 
@@ -3320,7 +5332,7 @@ Semana 3-4 (Progresión):
                                   placeholder="•••"
                                   value={checkoutCardCVC}
                                   onChange={e => setCheckoutCardCVC(e.target.value.replace(/\D/g, ''))}
-                                  className="w-full px-4 py-2.5 rounded-xl bg-[#161616] border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-[#E9C349] transition-all"
+                                  className="w-full px-4 py-2.5 rounded-xl bg-[#161616] border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-[#D9A9FF] transition-all"
                                 />
                               </div>
                             </div>
@@ -3329,7 +5341,7 @@ Semana 3-4 (Progresión):
                           <button
                             type="submit"
                             disabled={checkoutLoading}
-                            className="w-full mt-4 py-3 bg-[#E9C349] hover:bg-[#ffe175] text-black font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-1.5"
+                            className="w-full mt-4 py-3 bg-[#D9A9FF] hover:bg-[#F2CFFF] text-black font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-1.5"
                           >
                             {checkoutLoading ? (
                               <>
@@ -3358,23 +5370,26 @@ Semana 3-4 (Progresión):
 
           {activeSubTab === 'soundcloud' && (
             <motion.div
-              key="soundcloud-panel"
+              key="playlists-panel"
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               className="space-y-6"
             >
-              <div className="bg-[#121212] border border-[#9A2B3C]/50 p-6 rounded-3xl shadow-2xl space-y-4">
+              <InstructorPlaylistsManager currentUser={currentUser} language={language} />
+
+              {/* SoundCloud Fallback Sync Option */}
+              <div className="bg-[#121212]/80 border border-white/10 p-6 rounded-3xl shadow-xl space-y-4">
                 <div className="flex items-center gap-3 border-b border-[#262626] pb-4">
-                  <div className="w-10 h-10 rounded-2xl bg-[#9A2B3C]/20 border border-[#9A2B3C] flex items-center justify-center text-[#E9C349]">
+                  <div className="w-10 h-10 rounded-2xl bg-[#C23E9E]/20 border border-[#C23E9E] flex items-center justify-center text-[#D9A9FF]">
                     <Music className="w-5 h-5" />
                   </div>
                   <div>
                     <h3 className="text-base font-bold uppercase text-white tracking-wider flex items-center gap-2">
-                      Reproductor Oficial SoundCloud - Perfil del Profesor
+                      Sincronizador Opcional de SoundCloud - Perfil del Profesor
                     </h3>
                     <p className="text-xs font-mono text-[#8A8A8A]">
-                      Sincronizado automáticamente con: https://soundcloud.com/user-615971162
+                      Enlace alternativo directo a SoundCloud: https://soundcloud.com/user-615971162
                     </p>
                   </div>
                 </div>
@@ -3392,9 +5407,9 @@ Semana 3-4 (Progresión):
               className="space-y-6"
             >
               {/* Header Card */}
-              <div className="bg-[#121226] border-2 border-[#E9C349]/40 p-6 sm:p-8 rounded-3xl shadow-2xl relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+              <div className="bg-[#121226] border-2 border-[#D9A9FF]/40 p-6 sm:p-8 rounded-3xl shadow-2xl relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
                 <div className="space-y-2 max-w-xl">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#E9C349]/20 border border-[#E9C349]/50 text-[#E9C349] text-xs font-mono font-bold uppercase">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#D9A9FF]/20 border border-[#D9A9FF]/50 text-[#D9A9FF] text-xs font-mono font-bold uppercase">
                     <Radio className="w-4 h-4 animate-pulse" />
                     GESTIÓN DE AUDIO CÁTEDRA & PODCASTS
                   </div>
@@ -3402,7 +5417,7 @@ Semana 3-4 (Progresión):
                     Tus Programas de Podcast & Episodios
                   </h3>
                   <p className="text-xs text-gray-300 leading-relaxed">
-                    Publica audio episodios técnicos, entrevistas y teoría de waacking. <strong className="text-[#E9C349]">Los podcasts se incluyen automáticamente dentro de la suscripción mensual de tu cátedra.</strong> No hay precios independientes.
+                    Publica audio episodios técnicos, entrevistas y teoría de waacking. <strong className="text-[#D9A9FF]">Los podcasts se incluyen automáticamente dentro de la suscripción mensual de tu cátedra.</strong> No hay precios independientes.
                   </p>
                 </div>
 
@@ -3412,7 +5427,7 @@ Semana 3-4 (Progresión):
                     setPodcastModalMode('create_show');
                     setIsPodcastModalOpen(true);
                   }}
-                  className="px-6 py-3 rounded-2xl bg-gradient-to-r from-[#E9C349] to-[#f3d775] text-black font-mono text-xs font-black uppercase tracking-wider shadow-lg hover:brightness-110 transition-all flex items-center gap-2 shrink-0 cursor-pointer"
+                  className="px-6 py-3 rounded-2xl bg-gradient-to-r from-[#D9A9FF] to-[#f3d775] text-black font-mono text-xs font-black uppercase tracking-wider shadow-lg hover:brightness-110 transition-all flex items-center gap-2 shrink-0 cursor-pointer"
                 >
                   <Plus className="w-5 h-5" />
                   + Crear Podcast (Show)
@@ -3432,12 +5447,12 @@ Semana 3-4 (Progresión):
                         <img
                           src={pod.coverImage}
                           alt={pod.title}
-                          className="w-20 h-20 rounded-2xl object-cover border border-[#E9C349]"
+                          className="w-20 h-20 rounded-2xl object-cover border border-[#D9A9FF]"
                           referrerPolicy="no-referrer"
                         />
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="px-2.5 py-0.5 rounded-full bg-[#E9C349]/20 text-[#E9C349] text-[10px] font-mono font-bold uppercase">
+                            <span className="px-2.5 py-0.5 rounded-full bg-[#D9A9FF]/20 text-[#D9A9FF] text-[10px] font-mono font-bold uppercase">
                               {pod.category || 'Podcast Cátedra'}
                             </span>
                             <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase ${
@@ -3463,7 +5478,7 @@ Semana 3-4 (Progresión):
                             setPodcastModalMode('add_episode');
                             setIsPodcastModalOpen(true);
                           }}
-                          className="px-4 py-2 rounded-xl bg-[#E9C349] hover:bg-[#d4ae36] text-black font-mono text-xs font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
+                          className="px-4 py-2 rounded-xl bg-[#D9A9FF] hover:bg-[#B478F0] text-black font-mono text-xs font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
                         >
                           <Plus className="w-4 h-4" /> + Agregar Episodio
                         </button>
@@ -3490,23 +5505,23 @@ Semana 3-4 (Progresión):
                     {/* Episodes Table / List */}
                     <div className="space-y-3">
                       <h5 className="text-xs font-mono font-bold uppercase text-gray-300 tracking-wider flex items-center justify-between">
-                        <span>Episodios Publicados ({pod.episodes.length})</span>
+                        <span>Episodios Publicados ({(pod.episodes || []).length})</span>
                         <span className="text-[10px] text-gray-500 font-normal">Acceso exclusivo para tus suscriptores</span>
                       </h5>
 
-                      {pod.episodes.length === 0 ? (
+                      {(pod.episodes || []).length === 0 ? (
                         <div className="p-6 text-center rounded-2xl bg-white/5 border border-dashed border-white/10 text-xs text-gray-400">
                           Aún no has subido episodios a este podcast. ¡Haz clic en "+ Agregar Episodio" para publicar tu primera cátedra!
                         </div>
                       ) : (
                         <div className="space-y-2">
-                          {pod.episodes.map(ep => (
+                          {(pod.episodes || []).map(ep => (
                             <div
                               key={ep.id}
                               className="p-3.5 rounded-2xl bg-white/5 border border-white/10 hover:border-white/20 transition-all flex items-center justify-between gap-4"
                             >
                               <div className="flex items-center gap-3 min-w-0">
-                                <div className="w-10 h-10 rounded-xl bg-[#E9C349]/20 border border-[#E9C349]/40 flex items-center justify-center text-[#E9C349] shrink-0">
+                                <div className="w-10 h-10 rounded-xl bg-[#D9A9FF]/20 border border-[#D9A9FF]/40 flex items-center justify-center text-[#D9A9FF] shrink-0">
                                   <Radio className="w-5 h-5" />
                                 </div>
                                 <div className="min-w-0">
@@ -3721,7 +5736,7 @@ Semana 3-4 (Progresión):
                       handleSetPortfolioAsInstructorAvatar(instructorLightboxPhoto);
                       setInstructorLightboxPhoto(null);
                     }}
-                    className="px-4 py-2 bg-[#E9C349] text-black text-xs font-mono font-bold uppercase rounded-xl hover:bg-[#f3d362] transition-all flex items-center gap-1.5"
+                    className="px-4 py-2 bg-[#D9A9FF] text-black text-xs font-mono font-bold uppercase rounded-xl hover:bg-[#E4B8FF] transition-all flex items-center gap-1.5"
                   >
                     <Sparkles className="w-4 h-4 text-black" />
                     <span>Establecer como Foto de Perfil</span>

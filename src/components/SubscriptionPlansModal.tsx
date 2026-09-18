@@ -28,7 +28,7 @@ interface SubscriptionPlansModalProps {
   language: Language;
   onUpdateUser: (updatedUser: Partial<UserType>) => void;
   playChime?: (type: 'success' | 'click' | 'cash' | 'error') => void;
-  defaultPlan?: 'instructor' | 'basic_practice' | 'instructor_pass';
+  defaultPlan?: 'instructor' | 'basic_practice' | 'instructor_pass' | 'plan_academia' | 'studio';
   targetInstructorName?: string;
 }
 
@@ -43,64 +43,71 @@ export const SubscriptionPlansModal: React.FC<SubscriptionPlansModalProps> = ({
   targetInstructorName
 }) => {
   const isEs = language === 'es';
-  const [selectedPlan, setSelectedPlan] = useState<'instructor' | 'basic_practice' | 'instructor_pass'>(defaultPlan);
+  const [selectedPlan, setSelectedPlan] = useState<'instructor' | 'basic_practice' | 'instructor_pass' | 'plan_academia' | 'studio'>(defaultPlan);
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const handleSelectAndActivate = async (planKey: 'instructor' | 'basic_practice' | 'instructor_pass') => {
+  const handleSelectAndActivate = async (planKey: 'clase_profesor' | 'plan_instructor' | 'plan_academia' | 'instructor' | 'basic_practice' | 'instructor_pass' | 'studio') => {
     if (playChime) playChime('click');
     setLoadingPlan(planKey);
 
-    setTimeout(() => {
+    try {
+      // Call Universal Payment Webhook Simulator Endpoint on backend
+      const res = await fetch('/api/webhook/simulate-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: currentUser.id,
+          userEmail: currentUser.email || `${currentUser.id}@waackon.com`,
+          planType: planKey === 'instructor' ? 'plan_instructor' : (planKey === 'instructor_pass' ? 'clase_profesor' : (planKey === 'studio' ? 'plan_academia' : planKey)),
+          gateway: 'stripe',
+          transactionId: `tx-${Date.now()}`
+        })
+      });
+
+      const data = await res.json();
+
       if (playChime) playChime('cash');
 
-      if (planKey === 'instructor') {
-        // Instructor Platform Plan ($15 USD / month)
+      if (data.success && data.result) {
         onUpdateUser({
-          role: 'instructor',
-          instructorSubscriptionStatus: 'active',
-          billingStatus: 'active'
+          role: data.result.assignedRole,
+          billingStatus: 'active',
+          instructorSubscriptionStatus: 'active'
         });
-        setSuccessToast(
-          isEs 
-            ? '¡Suscripción de Instructor ($15 USD/mes) activada con éxito! Ya tienes acceso total a tu panel de gestión y cátedras.'
-            : 'Instructor Subscription ($15 USD/mo) activated successfully!'
-        );
-      } else if (planKey === 'basic_practice') {
-        // General Basic Plan ($8 USD / month)
-        onUpdateUser({
-          subscriptionTier: 'basic_practice',
-          billingStatus: 'active'
-        });
-        setSuccessToast(
-          isEs 
-            ? '¡Plan Básico de Práctica General ($8 USD/mes) activado! Tienes acceso ilimitado a todas las herramientas del Freestyle Lab.'
-            : 'General Practice Basic Plan ($8 USD/mo) activated!'
-        );
-      } else if (planKey === 'instructor_pass') {
-        // Instructor Pass ($15 USD / month per instructor, 80/20 split)
-        const currentSubs = currentUser.subscribedInstructorIds || [];
-        const newSubs = Array.from(new Set([...currentSubs, 'inst-1', 'inst-2']));
-        onUpdateUser({
-          subscriptionTier: 'instructor_pass',
-          subscribedInstructorIds: newSubs,
-          billingStatus: 'active'
-        });
-        setSuccessToast(
-          isEs 
-            ? `¡Membresía Cátedra Instructor ($15 USD/mes) activada! El 80% va directamente al profesor y el 20% a la plataforma.`
-            : 'Instructor Cátedra Membership ($15 USD/mo) activated! 80% goes to instructor.'
-        );
-      }
 
+        setSuccessToast(
+          isEs 
+            ? `¡Webhook de Pago Procesado! Rol actualizado a '${data.result.assignedRole.toUpperCase()}'. Redirigiendo a ${data.result.dashboardUrl}`
+            : `Payment Webhook Processed! Role updated to ${data.result.assignedRole.toUpperCase()}. Redirecting to ${data.result.dashboardUrl}`
+        );
+      } else {
+        // Fallback local update
+        const targetRole = planKey === 'instructor' || planKey === 'plan_instructor' ? 'instructor' : (planKey === 'plan_academia' || planKey === 'studio' ? 'studio' : 'student');
+        onUpdateUser({
+          role: targetRole,
+          billingStatus: 'active'
+        });
+        setSuccessToast(isEs ? `¡Plan activado exitosamente!` : `Plan activated successfully!`);
+      }
+    } catch (err) {
+      console.warn('[Webhook Simulation Error]:', err);
+      // Fallback
+      const targetRole = planKey === 'instructor' || planKey === 'plan_instructor' ? 'instructor' : (planKey === 'plan_academia' || planKey === 'studio' ? 'studio' : 'student');
+      onUpdateUser({
+        role: targetRole,
+        billingStatus: 'active'
+      });
+      setSuccessToast(isEs ? `¡Plan activado!` : `Plan activated!`);
+    } finally {
       setLoadingPlan(null);
       setTimeout(() => {
         setSuccessToast(null);
         onClose();
-      }, 2500);
-    }, 1200);
+      }, 2000);
+    }
   };
 
   return (
@@ -111,10 +118,10 @@ export const SubscriptionPlansModal: React.FC<SubscriptionPlansModalProps> = ({
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 15 }}
-        className="relative bg-[#0F0D1A] border-2 border-[#E9C349]/40 rounded-3xl max-w-5xl w-full p-6 sm:p-8 shadow-2xl z-10 space-y-6 overflow-hidden my-auto"
+        className="relative bg-[#0F0D1A] border-2 border-[#D9A9FF]/40 rounded-3xl max-w-5xl w-full p-4 sm:p-8 shadow-2xl z-10 space-y-6 overflow-y-auto max-h-[90vh] my-auto custom-scrollbar"
       >
         {/* Glow ambient backgrounds */}
-        <div className="absolute top-0 right-0 w-96 h-96 bg-[#E9C349]/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute top-0 right-0 w-96 h-96 bg-[#D9A9FF]/10 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-0 left-0 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
 
         {/* Close Button */}
@@ -143,8 +150,8 @@ export const SubscriptionPlansModal: React.FC<SubscriptionPlansModalProps> = ({
 
         {/* Modal Header */}
         <div className="text-center space-y-2 max-w-2xl mx-auto">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#E9C349]/15 border border-[#E9C349]/30 text-[#E9C349] font-mono text-[10px] font-black uppercase tracking-widest">
-            <Crown className="w-3.5 h-3.5 text-[#E9C349]" />
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#D9A9FF]/15 border border-[#D9A9FF]/30 text-[#D9A9FF] font-mono text-[10px] font-black uppercase tracking-widest">
+            <Crown className="w-3.5 h-3.5 text-[#D9A9FF]" />
             MODELO DE SUSCRIPCIONES Y MEMBRESÍAS WAACK ON
           </div>
 
@@ -159,8 +166,8 @@ export const SubscriptionPlansModal: React.FC<SubscriptionPlansModalProps> = ({
           </p>
         </div>
 
-        {/* 3 PLAN CARDS GRID */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 pt-2">
+        {/* 4 PLAN CARDS GRID */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
 
           {/* PLAN 1: PLAN BÁSICO DE PRÁCTICA GENERAL ($8 USD/MES) */}
           <div 
@@ -247,21 +254,21 @@ export const SubscriptionPlansModal: React.FC<SubscriptionPlansModalProps> = ({
             onClick={() => setSelectedPlan('instructor_pass')}
             className={`p-6 rounded-3xl border-2 transition-all cursor-pointer flex flex-col justify-between space-y-4 relative overflow-hidden ${
               selectedPlan === 'instructor_pass'
-                ? 'bg-gradient-to-b from-[#1C1628] to-[#120E1E] border-[#E9C349] shadow-[0_0_30px_rgba(233,195,73,0.3)] scale-[1.02]'
-                : 'bg-[#120F20] border-white/10 hover:border-[#E9C349]/50 hover:bg-[#18142A]'
+                ? 'bg-gradient-to-b from-[#1C1628] to-[#120E1E] border-[#D9A9FF] shadow-[0_0_30px_rgba(217, 169, 255,0.3)] scale-[1.02]'
+                : 'bg-[#120F20] border-white/10 hover:border-[#D9A9FF]/50 hover:bg-[#18142A]'
             }`}
           >
             {/* VIP Tag */}
-            <div className="absolute top-0 right-0 bg-[#E9C349] text-black text-[9px] font-mono font-black uppercase px-3 py-1 rounded-bl-2xl shadow-md">
+            <div className="absolute top-0 right-0 bg-[#D9A9FF] text-black text-[9px] font-mono font-black uppercase px-3 py-1 rounded-bl-2xl shadow-md">
               RECOMENDADO ALUMNOS
             </div>
 
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="px-2.5 py-1 rounded-lg bg-[#E9C349]/20 border border-[#E9C349]/40 text-[#E9C349] text-[10px] font-mono font-black uppercase tracking-wider">
+                <span className="px-2.5 py-1 rounded-lg bg-[#D9A9FF]/20 border border-[#D9A9FF]/40 text-[#D9A9FF] text-[10px] font-mono font-black uppercase tracking-wider">
                   PANEL DE INSTRUCTOR
                 </span>
-                <GraduationCap className="w-5 h-5 text-[#E9C349]" />
+                <GraduationCap className="w-5 h-5 text-[#D9A9FF]" />
               </div>
 
               <div>
@@ -275,7 +282,7 @@ export const SubscriptionPlansModal: React.FC<SubscriptionPlansModalProps> = ({
 
               <div className="pt-2 border-t border-white/10">
                 <div className="flex items-baseline gap-1">
-                  <span className="text-3xl font-black text-[#E9C349] font-mono">$15.00</span>
+                  <span className="text-3xl font-black text-[#D9A9FF] font-mono">$15.00</span>
                   <span className="text-xs font-mono text-slate-300">USD / mes por profesor</span>
                 </div>
                 <div className="mt-1 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-mono font-bold flex items-center gap-1">
@@ -285,19 +292,19 @@ export const SubscriptionPlansModal: React.FC<SubscriptionPlansModalProps> = ({
 
               <div className="space-y-2 pt-2 text-xs font-sans text-slate-300">
                 <div className="flex items-start gap-2">
-                  <Check className="w-4 h-4 text-[#E9C349] shrink-0 mt-0.5" />
+                  <Check className="w-4 h-4 text-[#D9A9FF] shrink-0 mt-0.5" />
                   <span><strong>Programa 4 Semanas</strong>: Clases exclusivas en HD y Masterclasses</span>
                 </div>
                 <div className="flex items-start gap-2">
-                  <Check className="w-4 h-4 text-[#E9C349] shrink-0 mt-0.5" />
+                  <Check className="w-4 h-4 text-[#D9A9FF] shrink-0 mt-0.5" />
                   <span><strong>Feedback 1v1</strong>: Corrección biomecánica de video enviada por el profesor</span>
                 </div>
                 <div className="flex items-start gap-2">
-                  <Check className="w-4 h-4 text-[#E9C349] shrink-0 mt-0.5" />
+                  <Check className="w-4 h-4 text-[#D9A9FF] shrink-0 mt-0.5" />
                   <span><strong>Biblioteca Exclusiva</strong>: Workbooks PDF, Guías teóricas y Ebooks</span>
                 </div>
                 <div className="flex items-start gap-2">
-                  <Check className="w-4 h-4 text-[#E9C349] shrink-0 mt-0.5" />
+                  <Check className="w-4 h-4 text-[#D9A9FF] shrink-0 mt-0.5" />
                   <span><strong>Pase Freestyle Lab incluido</strong>: Acceso total a las herramientas generales</span>
                 </div>
               </div>
@@ -310,7 +317,7 @@ export const SubscriptionPlansModal: React.FC<SubscriptionPlansModalProps> = ({
                 e.stopPropagation();
                 handleSelectAndActivate('instructor_pass');
               }}
-              className="w-full py-3 px-4 rounded-2xl bg-[#E9C349] hover:bg-[#d8b33c] text-black font-mono font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95 mt-4"
+              className="w-full py-3 px-4 rounded-2xl bg-[#D9A9FF] hover:bg-[#B87CFF] text-black font-mono font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95 mt-4"
             >
               {loadingPlan === 'instructor_pass' ? (
                 <span>Procesando...</span>
@@ -399,6 +406,82 @@ export const SubscriptionPlansModal: React.FC<SubscriptionPlansModalProps> = ({
             </button>
           </div>
 
+          {/* PLAN 4: MEMBRESÍA ESTUDIOS Y ACADEMIAS ($30 USD/MES) */}
+          <div 
+            onClick={() => setSelectedPlan('plan_academia')}
+            className={`p-6 rounded-3xl border-2 transition-all cursor-pointer flex flex-col justify-between space-y-4 relative overflow-hidden ${
+              selectedPlan === 'plan_academia' || selectedPlan === 'studio'
+                ? 'bg-gradient-to-b from-[#182338] to-[#0D1322] border-amber-400 shadow-[0_0_25px_rgba(251,191,36,0.3)] scale-[1.02]'
+                : 'bg-[#120F20] border-white/10 hover:border-amber-400/50 hover:bg-[#141829]'
+            }`}
+          >
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-mono font-black uppercase tracking-wider">
+                  STUDIOS Y ACADEMIAS
+                </span>
+                <Building2 className="w-5 h-5 text-amber-400" />
+              </div>
+
+              <div>
+                <h3 className="text-lg font-black text-white font-mono">
+                  Membresía Academia
+                </h3>
+                <p className="text-[11px] text-slate-400 font-sans mt-0.5">
+                  Gestión institucional de instructores, alumnos y repositorios.
+                </p>
+              </div>
+
+              <div className="pt-2 border-t border-white/10">
+                <div className="flex items-baseline gap-1">
+                  <span className="text-3xl font-black text-amber-300 font-mono">$30.00</span>
+                  <span className="text-xs font-mono text-amber-200">USD / mes</span>
+                </div>
+                <span className="text-[10px] font-mono text-slate-400 block mt-0.5">
+                  Gestión ilimitada de docentes y nómina estudiantil
+                </span>
+              </div>
+
+              <div className="space-y-2 pt-3 text-xs font-sans text-slate-300">
+                <div className="flex items-start gap-2">
+                  <Check className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <span><strong>Nómina Docente y Alumnos</strong>: Directorio unificado de tu estudio</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <Check className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <span><strong>Repositorio Documental</strong>: Subida de guías PDF, temarios y programas</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <Check className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <span><strong>Dashboard Institucional</strong>: Control de inscripciones y membresías</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <Check className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <span><strong>Mapa Global</strong>: Posicionamiento destacado como Academia Oficial</span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              disabled={loadingPlan === 'plan_academia' || loadingPlan === 'studio'}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSelectAndActivate('plan_academia');
+              }}
+              className="w-full py-3 px-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-mono font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95 mt-4"
+            >
+              {loadingPlan === 'plan_academia' || loadingPlan === 'studio' ? (
+                <span>Procesando...</span>
+              ) : (
+                <>
+                  <span>Activar Academia ($30 USD)</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </div>
+
         </div>
 
         {/* ACCESO GRATUITO FOOTER SUMMARY */}
@@ -411,7 +494,7 @@ export const SubscriptionPlansModal: React.FC<SubscriptionPlansModalProps> = ({
             </span>
           </div>
 
-          <span className="text-[10px] font-bold text-[#E9C349] bg-[#E9C349]/10 px-3 py-1 rounded-xl border border-[#E9C349]/20 shrink-0">
+          <span className="text-[10px] font-bold text-[#D9A9FF] bg-[#D9A9FF]/10 px-3 py-1 rounded-xl border border-[#D9A9FF]/20 shrink-0">
             SIN CONTRATOS NI PERMANENCIA
           </span>
         </div>

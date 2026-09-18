@@ -1,12 +1,7 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Global safety net: default deny
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // Helpers
+    // 1. Helper Functions
     function isSignedIn() {
       return request.auth != null;
     }
@@ -15,77 +10,113 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Users collection: Public profile read, owner-only write
+    // 2. User Profiles & Subcollections
     match /users/{userId} {
+      // Anyone can view public dancer profiles (name, avatar, role, level)
       allow read: if true;
-      allow create, update: if isSignedIn() || request.auth == null; // Allows anonymous demo / local user sync while validating
-      allow delete: if isOwner(userId);
+      // Only the authenticated owner can write to their own profile
+      allow write: if isOwner(userId);
 
-      // Practice logs subcollection: /users/{userId}/practice_logs/{logId}
+      match /playlists/{playlistId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /favoritos/{imageId} {
+        allow read, write: if isOwner(userId);
+      }
+
       match /practice_logs/{logId} {
-        allow read: if true;
-        allow write: if isSignedIn() || request.auth == null;
+        allow read, write: if isOwner(userId);
+      }
+
+      match /{allSubcollections=**} {
+        allow read, write: if isOwner(userId);
       }
     }
 
-    // Friendships collection
-    match /friendships/{friendshipId} {
-      allow read: if true;
-      allow write: if isSignedIn() || request.auth == null;
-    }
-
-    // Battles collection
-    match /battles/{battleId} {
-      allow read: if true;
-      allow write: if isSignedIn() || request.auth == null;
-    }
-
-    // Lessons collection
+    // 3. Lessons & Academy Curriculum
     match /lessons/{lessonId} {
       allow read: if true;
-      allow create, update, delete: if isSignedIn() || request.auth == null;
+      allow write: if isSignedIn();
     }
 
-    // Announcements
+    // 4. Announcements
     match /announcements/{annId} {
       allow read: if true;
-      allow write: if isSignedIn() || request.auth == null;
+      allow write: if isSignedIn();
     }
 
-    // Presentations (Forum)
+    // 5. Presentations
     match /presentations/{presId} {
       allow read: if true;
-      allow create, update: if isSignedIn() || request.auth == null;
-      allow delete: if isSignedIn();
+      allow write: if isSignedIn();
     }
 
-    // Chat Messages: Read open, Create open, Protect against malicious deletion
-    match /chat_messages/{msgId} {
+    // 6. Community & Chat Messages
+    match /community_messages/{messageId} {
       allow read: if true;
-      allow create: if true;
-      allow update, delete: if isSignedIn();
+      allow write: if isSignedIn();
     }
 
-    // Feedback Items
-    match /feedback_items/{fbId} {
+    match /chat_messages/{messageId} {
       allow read: if true;
-      allow create, update: if true;
-      allow delete: if isSignedIn();
+      allow write: if isSignedIn();
     }
 
-    // Notifications collection
+    match /direct_messages/{messageId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // 7. Social & Battles
+    match /friendships/{friendshipId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /battles/{battleId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // 8. Music & Playlists
+    match /user_playlists/{playlistId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /instructor_playlists/{playlistId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    match /instructor_tracks/{trackId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    match /instructor_drive_tracks/{trackId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // 9. Feedback & Practice Logs
+    match /feedback_items/{feedbackId} {
+      allow read, write: if isSignedIn();
+    }
+
     match /notifications/{notifId} {
-      allow read: if true;
-      allow create, update: if true;
-      allow delete: if isSignedIn();
+      allow read, write: if isSignedIn();
     }
 
-    // Reels collection (Short Videos)
+    match /practice_logs/{logId} {
+      allow read, write: if isSignedIn();
+    }
+
     match /reels/{reelId} {
       allow read: if true;
-      allow create, update: if true;
-      allow delete: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // 10. Connection Healthcheck
+    match /test/{docId} {
+      allow read, write: if true;
     }
   }
 }
-

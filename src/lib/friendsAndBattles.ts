@@ -12,20 +12,23 @@ import {
   limit,
   serverTimestamp 
 } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { db, auth, handleFirestoreError, OperationType, sanitizeFirestoreData } from '../firebase';
 import { User, FriendshipDoc, BattleDoc } from '../types';
 
 /**
  * Ensures user profile document is saved/updated in Firestore `users/{uid}`
  */
 export async function upsertUserProfile(user: User, customUsername?: string) {
-  if (!user.id) return;
-  const path = `users/${user.id}`;
+  const activeAuthUser = auth.currentUser;
+  if (!activeAuthUser) return; // Skip Firestore write if user is not authenticated with Firebase Auth
+
+  const targetUid = activeAuthUser.uid;
+  const path = `users/${targetUid}`;
   try {
-    const defaultUsername = customUsername || user.username || (user.name || 'user').toLowerCase().replace(/\s+/g, '_') + '_' + (user.id || '0000').slice(-4);
+    const defaultUsername = customUsername || user.username || (user.name || 'user').toLowerCase().replace(/\s+/g, '_') + '_' + targetUid.slice(-4);
     const userPayload = {
-      uid: user.id,
-      id: user.id,
+      uid: targetUid,
+      id: targetUid,
       name: user.name,
       username: defaultUsername,
       displayName: user.displayName || user.name,
@@ -36,9 +39,9 @@ export async function upsertUserProfile(user: User, customUsername?: string) {
       isOnline: user.status === 'online' || user.status === 'in_battle' || true,
       updatedAt: new Date().toISOString()
     };
-    await setDoc(doc(db, 'users', user.id), userPayload, { merge: true });
+    await setDoc(doc(db, 'users', targetUid), sanitizeFirestoreData(userPayload), { merge: true });
   } catch (err) {
-    console.error('Error upserting user profile:', err);
+    console.warn('Notice: Could not sync user profile to Firestore:', err);
   }
 }
 
@@ -46,16 +49,19 @@ export async function upsertUserProfile(user: User, customUsername?: string) {
  * Update user presence status ('online' | 'in_battle' | 'offline')
  */
 export async function updateUserStatus(userId: string, status: 'online' | 'in_battle' | 'offline') {
-  if (!userId) return;
-  const path = `users/${userId}`;
+  const activeAuthUser = auth.currentUser;
+  if (!activeAuthUser) return; // Skip Firestore write if user is not authenticated with Firebase Auth
+
+  const targetUid = activeAuthUser.uid;
+  const path = `users/${targetUid}`;
   try {
-    await updateDoc(doc(db, 'users', userId), {
+    await updateDoc(doc(db, 'users', targetUid), {
       status,
       isOnline: status !== 'offline',
       lastActiveDate: new Date().toISOString()
     });
   } catch (err) {
-    console.warn('Could not update user status:', err);
+    console.warn('Notice: Could not update user status in Firestore:', err);
   }
 }
 
@@ -116,7 +122,7 @@ export async function sendFriendRequest(currentUserId: string, targetUserId: str
       requestedBy: currentUserId,
       createdAt: new Date().toISOString()
     };
-    await setDoc(doc(db, 'friendships', friendshipId), friendshipData, { merge: true });
+    await setDoc(doc(db, 'friendships', friendshipId), sanitizeFirestoreData(friendshipData), { merge: true });
     return friendshipId;
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, path);
@@ -155,7 +161,10 @@ export async function declineFriendRequest(friendshipId: string) {
  * Real-time listener for friendships associated with current user
  */
 export function listenToFriendships(userId: string, callback: (friendships: FriendshipDoc[]) => void) {
-  if (!userId) return () => {};
+  if (!userId || !auth.currentUser) {
+    callback([]);
+    return () => {};
+  }
   const path = 'friendships';
   const q = query(collection(db, 'friendships'), where('users', 'array-contains', userId));
   
@@ -174,7 +183,7 @@ export function listenToFriendships(userId: string, callback: (friendships: Frie
  * Real-time listener for user profiles by ID array
  */
 export function listenToUsersProfiles(userUids: string[], callback: (users: User[]) => void) {
-  if (!userUids || userUids.length === 0) {
+  if (!userUids || userUids.length === 0 || !auth.currentUser) {
     callback([]);
     return () => {};
   }
@@ -253,7 +262,7 @@ export async function createBattleInvitation(hostUser: User, guestUser: User): P
       guestScore: 0
     };
 
-    await setDoc(doc(db, 'battles', battleId), battleData);
+    await setDoc(doc(db, 'battles', battleId), sanitizeFirestoreData(battleData));
     return battleId;
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, path);
@@ -265,7 +274,10 @@ export async function createBattleInvitation(hostUser: User, guestUser: User): P
  * Real-time listener for incoming battle invitations for guest
  */
 export function listenToIncomingBattleInvitations(guestUserId: string, callback: (battles: BattleDoc[]) => void) {
-  if (!guestUserId) return () => {};
+  if (!guestUserId || !auth.currentUser) {
+    callback([]);
+    return () => {};
+  }
   const path = 'battles';
   const q = query(
     collection(db, 'battles'), 
@@ -288,7 +300,10 @@ export function listenToIncomingBattleInvitations(guestUserId: string, callback:
  * Real-time listener for a specific battle session
  */
 export function listenToBattleSession(battleId: string, callback: (battle: BattleDoc | null) => void) {
-  if (!battleId) return () => {};
+  if (!battleId || !auth.currentUser) {
+    callback(null);
+    return () => {};
+  }
   const path = `battles/${battleId}`;
   
   return onSnapshot(doc(db, 'battles', battleId), (docSnap) => {
